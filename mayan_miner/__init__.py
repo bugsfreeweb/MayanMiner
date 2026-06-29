@@ -1,0 +1,1 @@
+"""Mayan Miner package."""
