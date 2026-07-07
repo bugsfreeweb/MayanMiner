@@ -5,16 +5,24 @@ $tempDist = "$env:TEMP\mayanminer_gui_dist"
 $tempBuild = "$env:TEMP\mayanminer_gui_build"
 $exePath = Join-Path $tempDist "MayanMiner.exe"
 $innoCompiler = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-$python = "C:\Users\User\AppData\Local\Programs\Python\Python312\python.exe"
 
-# Build the GUI executable first
-if (-not (Test-Path $python)) {
-    Write-Error "Python 3.12 not found. Please install Python 3.12 with tcl/tk support."
+# Use whichever Python is on PATH instead of a hardcoded, machine-specific
+# install location (the previous path only existed on one developer's PC).
+$python = (Get-Command python -ErrorAction SilentlyContinue).Source
+if (-not $python) {
+    Write-Error "Python was not found on PATH. Please install Python 3.10+ with tcl/tk support and ensure 'python' is on PATH."
     exit 1
 }
 
+Write-Host "Using Python at $python"
 Write-Host "Building MayanMiner.exe with GUI support..."
 Set-Location $projectRoot
+
+& $python -m pip install --disable-pip-version-check -r requirements.txt
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Failed to install Python dependencies."
+    exit 1
+}
 
 # Clean and recreate temp build directories
 if (Test-Path $tempDist) { Remove-Item -Recurse -Force $tempDist }
@@ -22,8 +30,14 @@ if (Test-Path $tempBuild) { Remove-Item -Recurse -Force $tempBuild }
 New-Item -ItemType Directory -Path $tempDist -Force | Out-Null
 New-Item -ItemType Directory -Path $tempBuild -Force | Out-Null
 
-# Run PyInstaller
-& $python -m PyInstaller --clean --noconfirm --onefile --windowed --name MayanMiner --distpath $tempDist --workpath $tempBuild --specpath $tempBuild main.py
+# Run PyInstaller - bundles assets/logo.png (for the in-app logo) and sets
+# assets/logo.ico as the exe's own icon.
+$assetsDir = Join-Path $projectRoot "assets"
+$iconPath = Join-Path $assetsDir "logo.ico"
+& $python -m PyInstaller --clean --noconfirm --onefile --windowed --name MayanMiner `
+    --icon "$iconPath" `
+    --add-data "$assetsDir\logo.png;assets" `
+    --distpath $tempDist --workpath $tempBuild --specpath $tempBuild main.py
 if ($LASTEXITCODE -ne 0) {
     Write-Error "PyInstaller build failed."
     exit 1

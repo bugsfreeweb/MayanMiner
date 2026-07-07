@@ -1,4 +1,3 @@
-import json
 import os
 import tempfile
 import unittest
@@ -61,25 +60,39 @@ class SecureConfigManagerTests(unittest.TestCase):
         self.assertIn("--api-port", command)
         self.assertNotIn("--url", command)
 
-    def test_rx_zero_algorithm_uses_supported_alias(self):
+    def test_custom_miner_kind_uses_custom_algorithm_flag_when_non_default(self):
         cfg = default_config()
-        cfg.update({"algorithm": "rx/0"})
+        cfg.update(
+            {
+                "miner_kind": "custom",
+                "miner_executable": "miner.exe",
+                "algorithm": "my-special-algo",
+            }
+        )
         command = build_miner_command(cfg)
-        self.assertIn("randomx", command)
+        self.assertIn("--algo", command)
+        self.assertIn("my-special-algo", command)
 
-    def test_config_export_import_round_trip(self):
-        temp_path = os.path.join(self.temp_dir.name, "export.json")
+    def test_custom_miner_kind_uses_command_template(self):
         cfg = default_config()
-        cfg.update({"wallet": "wallet-123", "theme": "dark"})
-        self.manager.save_config(cfg)
-        self.manager.export_config(temp_path)
-        with open(temp_path, "r", encoding="utf-8") as handle:
-            exported = json.load(handle)
-        self.assertEqual(exported["wallet"], "wallet-123")
-
-        reloaded = SecureConfigManager(storage_path=self.storage_path, key_path=self.key_path)
-        reloaded.import_config(temp_path)
-        self.assertEqual(reloaded.load_config()["theme"], "dark")
+        cfg.update(
+            {
+                "miner_kind": "custom",
+                "miner_executable": "otherminer.exe",
+                "pool": "pool.example:5555",
+                "wallet": "abc123",
+                "algorithm": "some-algo",
+                "threads": 6,
+                "custom_command_template": (
+                    "{executable} -a {algorithm} -o {pool} -u {wallet} -t {threads}"
+                ),
+            }
+        )
+        command = build_miner_command(cfg)
+        self.assertEqual(
+            command,
+            ["otherminer.exe", "-a", "some-algo", "-o", "pool.example:5555", "-u", "abc123", "-t", "6"],
+        )
 
 
 if __name__ == "__main__":

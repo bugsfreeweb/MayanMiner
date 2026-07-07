@@ -1,20 +1,32 @@
 import argparse
 import os
-import re
 import shlex
-import sys
 import threading
-import time
+import sys
+from typing import Dict, Optional
 from pathlib import Path
-from typing import Dict, List, Optional
+
+
+def _resource_path(relative_path: str) -> Path:
+    """Resolve a bundled resource both when running from source and when
+    running as a frozen PyInstaller --onefile executable.
+
+    PyInstaller extracts bundled data files to a temporary directory exposed
+    as sys._MEIPASS at runtime; when running from source there is no such
+    attribute and we fall back to the project root (parent of this package).
+    """
+    base = getattr(sys, "_MEIPASS", None)
+    if base:
+        return Path(base) / relative_path
+    return Path(__file__).resolve().parent.parent / relative_path
 
 try:
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
-
     TKINTER_AVAILABLE = True
 except ImportError:
     TKINTER_AVAILABLE = False
+    # Provide stub classes for when tkinter is not available
     tk = None
     filedialog = None
     messagebox = None
@@ -23,164 +35,59 @@ except ImportError:
 from mayan_miner.config import SecureConfigManager, default_config
 from mayan_miner.miner import MinerController, build_miner_command
 from mayan_miner.updater import (
+    download_latest_app_installer,
     download_latest_xmrig,
     get_installed_miner_version,
+    get_installed_miner_path,
     get_latest_app_version,
     is_app_update_available,
 )
-
-
-class SplashScreen:
-    def __init__(self, parent: "tk.Tk") -> None:
-        self.root = tk.Toplevel(parent)
-        self.root.overrideredirect(True)
-        self.root.configure(bg="#081120")
-        self.root.attributes("-topmost", True)
-        self.root.withdraw()
-        self._build_ui(parent)
-
-    def _build_ui(self, parent: "tk.Tk") -> None:
-        width = 420
-        height = 240
-        x = parent.winfo_x() + max(0, (parent.winfo_width() - width) // 2)
-        y = parent.winfo_y() + max(0, (parent.winfo_height() - height) // 2)
-        self.root.geometry(f"{width}x{height}+{x}+{y}")
-        self.root.deiconify()
-
-        frame = tk.Frame(self.root, bg="#081120")
-        frame.pack(fill="both", expand=True, padx=22, pady=22)
-        tk.Label(frame, text="Mayan Miner", fg="#f8fafc", bg="#081120", font=("Segoe UI", 24, "bold")).pack(anchor="w")
-        tk.Label(frame, text="Starting a polished mining experience…", fg="#93c5fd", bg="#081120", font=("Segoe UI", 10)).pack(anchor="w", pady=(4, 16))
-
-        logo_path = Path(__file__).resolve().parent.parent / "assets" / "logo.png"
-        try:
-            image = tk.PhotoImage(master=self.root, file=str(logo_path))
-            tk.Label(frame, image=image, bg="#081120").pack(anchor="w", pady=(0, 12))
-            self.logo_image = image
-        except Exception:
-            tk.Label(frame, text="◉", fg="#38bdf8", bg="#081120", font=("Segoe UI", 44, "bold")).pack(anchor="w", pady=(0, 12))
-
-        self.progress_var = tk.DoubleVar(value=0)
-        progress = ttk.Progressbar(frame, variable=self.progress_var, maximum=100, length=360)
-        progress.pack(fill="x", pady=(8, 0))
-        self.progress_bar = progress
-        self._animate()
-
-    def _animate(self) -> None:
-        value = self.progress_var.get() + 8
-        if value >= 100:
-            value = 0
-        self.progress_var.set(value)
-        self.root.after(80, self._animate)
-
-    def close(self) -> None:
-        self.root.after(0, self.root.destroy)
 
 
 class MayanMinerApp:
     def __init__(self, root: "tk.Tk") -> None:
         self.root = root
         self.root.title("Mayan Miner")
-        self.root.geometry("1240x820")
-        self.root.minsize(1100, 760)
+        self.root.geometry("1120x760")
+        self.root.minsize(1024, 700)
         self.root.configure(bg="#07111f")
+        self._apply_theme()
 
         self.config_manager = SecureConfigManager()
         self.controller = MinerController()
+        self.process: Optional[object] = None
         self.output_thread: Optional[threading.Thread] = None
-        self.splash: Optional[SplashScreen] = None
-        self.tray_icon = None
-        self.performance_history: List[float] = []
-        self.theme_mode = "system"
-        self.vars: Dict[str, "tk.Variable"] = {}
-        self.bool_vars: Dict[str, tk.BooleanVar] = {}
 
+        self.vars: Dict[str, "tk.Variable"] = {}
         self._build_ui()
         self._populate_from_config()
         self._refresh_status()
         self._refresh_installed_miner_status()
 
-        if self._should_show_splash():
-            self.root.after(120, self._show_splash_screen)
-
-    def _should_show_splash(self) -> bool:
-        return bool(self.bool_vars.get("show_splash_screen", tk.BooleanVar(value=True)).get())
-
-    def _show_splash_screen(self) -> None:
-        self.splash = SplashScreen(self.root)
-        self.root.after(1400, lambda: self._close_splash() if self.splash else None)
-
-    def _close_splash(self) -> None:
-        if self.splash:
-            self.splash.close()
-            self.splash = None
-
-    def _apply_theme(self, mode: str) -> None:
-        self.theme_mode = mode
+    def _apply_theme(self) -> None:
         style = ttk.Style(self.root)
         try:
             style.theme_use("clam")
         except tk.TclError:
             pass
+        # Base colors
+        bg = "#07111f"
+        card = "#0f1724"
+        text = "#e2e8f0"
+        accent = "#06b6d4"  # teal
+        primary = "#10b981"  # emerald green for primary actions
 
-        if mode == "light":
-            bg = "#f8fafc"
-            panel = "#ffffff"
-            border = "#dbe4f0"
-            fg = "#0f172a"
-            muted = "#475569"
-            accent = "#2563eb"
-            accent_fg = "#ffffff"
-            input_bg = "#ffffff"
-            output_bg = "#f8fafc"
-            output_fg = "#0f172a"
-        else:
-            bg = "#07111f"
-            panel = "#0f172a"
-            border = "#233247"
-            fg = "#e2e8f0"
-            muted = "#94a3b8"
-            accent = "#38bdf8"
-            accent_fg = "#081120"
-            input_bg = "#020617"
-            output_bg = "#020617"
-            output_fg = "#f8fafc"
-
-        self.root.configure(bg=bg)
-        style.configure("Card.TFrame", background=panel)
-        style.configure("Panel.TFrame", background=panel)
-        style.configure("TLabel", background=bg, foreground=fg)
+        style.configure("TLabel", background=bg, foreground=text)
         style.configure("TFrame", background=bg)
-        style.configure("TButton", padding=7, background=accent, foreground=accent_fg)
-        style.configure("TEntry", padding=4, fieldbackground=input_bg, foreground=fg)
-        style.configure("TCombobox", padding=4, fieldbackground=input_bg, foreground=fg)
-        style.configure("TCheckbutton", background=bg, foreground=fg)
-        style.map("TButton", background=[("active", accent), ("!disabled", accent)], foreground=[("active", accent_fg), ("!disabled", accent_fg)])
-        style.map("TCombobox", fieldbackground=[("readonly", input_bg)])
+        style.configure("TEntry", padding=4)
 
-        self._apply_widget_colors(self.root, bg=bg, fg=fg, panel=panel, muted=muted)
-        if hasattr(self, "command_preview"):
-            self.command_preview.configure(bg=output_bg, fg="#7dd3fc" if mode != "light" else accent)
-            self.log_text.configure(bg=output_bg, fg=output_fg)
-            self.performance_canvas.configure(bg=panel)
+        # Primary button style
+        style.configure("Primary.TButton", background=primary, foreground="#ffffff", padding=8, font=("Segoe UI", 10, "bold"))
+        style.map("Primary.TButton", background=[("active", "#0ea46a"), ("!disabled", primary)], foreground=[("disabled", "#9ca3af")])
 
-    def _apply_widget_colors(self, widget: tk.Misc, bg: str, fg: str, panel: str, muted: str) -> None:
-        try:
-            if isinstance(widget, (tk.Frame, tk.LabelFrame, tk.Canvas)):
-                widget.configure(bg=panel)
-            elif isinstance(widget, tk.Label):
-                widget.configure(bg=bg, fg=fg)
-                if widget.cget("text") in {"", " "}:
-                    widget.configure(bg=bg)
-            elif isinstance(widget, tk.Text):
-                widget.configure(bg=bg, fg=fg)
-            elif isinstance(widget, ttk.Frame):
-                widget.configure(style="Card.TFrame")
-        except Exception:
-            pass
-
-        for child in widget.winfo_children():
-            self._apply_widget_colors(child, bg=bg, fg=fg, panel=panel, muted=muted)
+        # Secondary button style (subtle)
+        style.configure("Secondary.TButton", background=card, foreground=text, padding=6, font=("Segoe UI", 9))
+        style.map("Secondary.TButton", background=[("active", "#0b1220"), ("!disabled", card)])
 
     def _build_ui(self) -> None:
         self.root.grid_columnconfigure(0, weight=1)
@@ -188,23 +95,33 @@ class MayanMinerApp:
 
         header = tk.Frame(self.root, bg="#0f172a", padx=18, pady=16)
         header.grid(row=0, column=0, sticky="ew")
+        # Two columns: title/subtitle stretch on the left, logo is pinned to
+        # the top-right corner of the header.
         header.grid_columnconfigure(0, weight=1)
+        header.grid_columnconfigure(1, weight=0)
 
-        logo_row = tk.Frame(header, bg="#0f172a")
-        logo_row.grid(row=0, column=0, sticky="ew")
-        logo_row.grid_columnconfigure(1, weight=1)
+        title_box = tk.Frame(header, bg="#0f172a")
+        title_box.grid(row=0, column=0, sticky="w")
+        tk.Label(title_box, text="Mayan Miner", fg="#f8fafc", bg="#0f172a", font=("Segoe UI", 24, "bold")).pack(anchor="w")
+        tk.Label(title_box, text="Professional CPU-only mining launcher for Windows", fg="#94a3b8", bg="#0f172a", font=("Segoe UI", 10)).pack(anchor="w", pady=(3, 0))
 
-        logo_path = Path(__file__).resolve().parent.parent / "assets" / "logo.png"
+        # Try to load application logo (keeps a reference on self to avoid GC).
+        # Uses a bundle-safe resource path so it also works from a frozen
+        # PyInstaller --onefile exe, and is downscaled from its source
+        # resolution (512x512) to a sane on-screen icon size.
+        self.logo_image = None
         try:
-            logo_image = tk.PhotoImage(file=str(logo_path))
-            label_image = tk.Label(logo_row, image=logo_image, bg="#0f172a")
-            label_image.image = logo_image
-            label_image.grid(row=0, column=0, sticky="w")
+            logo_path = _resource_path("assets/logo.png")
+            if logo_path.exists():
+                raw_image = tk.PhotoImage(file=str(logo_path))
+                width = raw_image.width()
+                target = 64
+                factor = max(1, round(width / target)) if width > target else 1
+                self.logo_image = raw_image.subsample(factor, factor) if factor > 1 else raw_image
+                tk.Label(header, image=self.logo_image, bg="#0f172a").grid(row=0, column=1, sticky="ne")
         except Exception:
-            tk.Label(logo_row, text="◉", fg="#38bdf8", bg="#0f172a", font=("Segoe UI", 22, "bold")).grid(row=0, column=0, sticky="w")
-
-        tk.Label(logo_row, text="Mayan Miner", fg="#f8fafc", bg="#0f172a", font=("Segoe UI", 24, "bold")).grid(row=0, column=1, sticky="w", padx=(10, 0))
-        tk.Label(logo_row, text="Modern CPU-only mining launcher for Windows", fg="#94a3b8", bg="#0f172a", font=("Segoe UI", 10)).grid(row=1, column=1, sticky="w", padx=(10, 0), pady=(2, 0))
+            # Fail gracefully if image can't be loaded
+            self.logo_image = None
 
         main = tk.Frame(self.root, bg="#07111f")
         main.grid(row=1, column=0, sticky="nsew", padx=16, pady=12)
@@ -229,10 +146,17 @@ class MayanMinerApp:
             ("Worker", "worker", "entry", "mayan-cpu"),
             ("Password", "password", "entry", "x"),
             ("Miner kind", "miner_kind", "combo", "xmrig"),
+            # Algorithm: provide common choices but allow custom input by making combobox editable
             ("Algorithm", "algorithm", "combo", "rx/0"),
             ("Threads", "threads", "spin", "4"),
             ("Miner executable", "miner_executable", "path", ""),
             ("Extra args", "extra_args", "entry", ""),
+            # Only used when Miner kind = Custom. Lets the app drive any other
+            # miner binary regardless of its CLI syntax, including whatever
+            # flag that miner uses for its own algorithm option.
+            ("Custom command template (Custom kind only)", "custom_command_template", "entry", ""),
+            # Developer wallet intentionally not shown in UI for security — kept in config
+            # Developer fee kept at default (not editable in UI)
         ]
 
         for index, (label, key, kind, default) in enumerate(rows, start=1):
@@ -242,9 +166,16 @@ class MayanMinerApp:
                 ttk.Entry(left, textvariable=var, width=40).grid(row=index, column=1, sticky="ew", pady=6)
             elif kind == "combo":
                 var = tk.StringVar(value=default)
-                values = ["xmrig", "srbminer", "custom"] if key == "miner_kind" else ["rx/0", "randomx", "cn/0", "cn/1", "cn/2", "cn-lite", "kawpow", "sha256", "ethash", "custom"]
-                combo = ttk.Combobox(left, textvariable=var, values=values, state="normal", width=37)
-                combo.grid(row=index, column=1, sticky="ew", pady=6)
+                if key == "miner_kind":
+                    values = ["xmrig", "srbminer", "custom"]
+                    ttk.Combobox(left, textvariable=var, values=values, state="readonly", width=37).grid(row=index, column=1, sticky="ew", pady=6)
+                else:
+                    # Algorithm combobox: provide defaults but allow typing a custom algorithm
+                    try:
+                        known = default_config().get("known_algorithms", ["rx/0", "cn/0", "cn/1", "kawpow", "randomx", "sha256"])
+                    except Exception:
+                        known = ["rx/0", "cn/0", "cn/1", "kawpow", "randomx", "sha256"]
+                    ttk.Combobox(left, textvariable=var, values=known, state="normal", width=37).grid(row=index, column=1, sticky="ew", pady=6)
             elif kind == "spin":
                 var = tk.StringVar(value=default)
                 ttk.Spinbox(left, from_=1, to=256, textvariable=var, width=12).grid(row=index, column=1, sticky="w", pady=6)
@@ -254,35 +185,27 @@ class MayanMinerApp:
                 ttk.Button(left, text="Browse", command=lambda target=var: self._browse_miner(target)).grid(row=index, column=2, padx=(6, 0), pady=6)
             self.vars[key] = var
 
-        self.bool_vars["use_all_cores"] = tk.BooleanVar(value=True)
-        ttk.Checkbutton(left, variable=self.bool_vars["use_all_cores"], text="Use all CPU cores").grid(row=len(rows) + 1, column=1, sticky="w", pady=(8, 0))
+        self.use_all_cores_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(left, variable=self.use_all_cores_var, text="Use all CPU cores").grid(row=len(rows) + 1, column=1, sticky="w", pady=(8, 0))
 
-        self.bool_vars["start_on_login"] = tk.BooleanVar(value=False)
-        ttk.Checkbutton(left, variable=self.bool_vars["start_on_login"], text="Start mining on system login").grid(row=len(rows) + 2, column=1, sticky="w")
+        hint_text = (
+            "Tip: the Algorithm box accepts any custom algorithm name, not just the presets.\n"
+            "For a fully custom miner app, set Miner kind to \"custom\" and optionally fill in\n"
+            "the command template using {executable} {pool} {wallet} {worker} {password}\n"
+            "{algorithm} {threads} {extra_args} placeholders for that program's own CLI syntax."
+        )
+        tk.Label(
+            left, text=hint_text, fg="#64748b", bg="#111827", font=("Segoe UI", 8), justify="left",
+        ).grid(row=len(rows) + 2, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
-        self.bool_vars["minimize_to_tray"] = tk.BooleanVar(value=False)
-        ttk.Checkbutton(left, variable=self.bool_vars["minimize_to_tray"], text="Minimize to tray instead of the taskbar").grid(row=len(rows) + 3, column=1, sticky="w")
-
-        self.bool_vars["show_tray_icon"] = tk.BooleanVar(value=False)
-        ttk.Checkbutton(left, variable=self.bool_vars["show_tray_icon"], text="Show tray icon").grid(row=len(rows) + 4, column=1, sticky="w")
-
-        self.bool_vars["show_splash_screen"] = tk.BooleanVar(value=True)
-        ttk.Checkbutton(left, variable=self.bool_vars["show_splash_screen"], text="Show splash screen").grid(row=len(rows) + 5, column=1, sticky="w")
-
-        self.theme_var = tk.StringVar(value="system")
-        ttk.Label(left, text="Theme").grid(row=len(rows) + 6, column=0, sticky="w", pady=(10, 0))
-        ttk.Combobox(left, textvariable=self.theme_var, values=["light", "dark", "system"], state="readonly", width=20).grid(row=len(rows) + 6, column=1, sticky="w", pady=(10, 0))
-
-        button_row = len(rows) + 7
+        button_row = len(rows) + 3
         buttons = tk.Frame(left, bg="#111827")
         buttons.grid(row=button_row, column=0, columnspan=3, sticky="w", pady=(16, 0))
-        ttk.Button(buttons, text="Save", command=self._save_config).pack(side="left", padx=(0, 8))
-        ttk.Button(buttons, text="Export config", command=self._export_config).pack(side="left", padx=(0, 8))
-        ttk.Button(buttons, text="Import config", command=self._import_config).pack(side="left", padx=(0, 8))
-        ttk.Button(buttons, text="Start mining", command=self._start_mining).pack(side="left", padx=(0, 8))
-        ttk.Button(buttons, text="Stop", command=self._stop_mining).pack(side="left", padx=(0, 8))
-        ttk.Button(buttons, text="Install XMRig", command=self._install_miner).pack(side="left", padx=(0, 8))
-        ttk.Button(buttons, text="Check app update", command=self._check_for_updates).pack(side="left")
+        ttk.Button(buttons, text="Save", command=self._save_config, style="Secondary.TButton").pack(side="left", padx=(0, 8))
+        ttk.Button(buttons, text="Start mining", command=self._start_mining, style="Primary.TButton").pack(side="left", padx=(0, 8))
+        ttk.Button(buttons, text="Stop", command=self._stop_mining, style="Secondary.TButton").pack(side="left", padx=(0, 8))
+        ttk.Button(buttons, text="Install XMRig", command=self._install_miner, style="Secondary.TButton").pack(side="left", padx=(0, 8))
+        ttk.Button(buttons, text="Check app update", command=self._check_for_updates, style="Secondary.TButton").pack(side="left")
 
         tk.Label(right, text="Live status", fg="#f8fafc", bg="#111827", font=("Segoe UI", 16, "bold")).grid(row=0, column=0, sticky="w")
         self.status_var = tk.StringVar(value="Ready to mine")
@@ -294,67 +217,17 @@ class MayanMinerApp:
         self.app_update_var = tk.StringVar(value="App update status: unknown")
         tk.Label(right, textvariable=self.app_update_var, fg="#cbd5e1", bg="#111827", font=("Segoe UI", 10)).grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
-        self.notice_var = tk.StringVar(value="Developer support notice: a small fee may be applied to contributions.")
-        tk.Label(right, textvariable=self.notice_var, fg="#93c5fd", bg="#111827", font=("Segoe UI", 10)).grid(row=3, column=0, columnspan=2, sticky="w", pady=(0, 6))
-
-        tk.Label(right, text="Launch command", fg="#cbd5e1", bg="#111827").grid(row=4, column=0, sticky="w")
+        tk.Label(right, text="Launch command", fg="#cbd5e1", bg="#111827").grid(row=3, column=0, sticky="w")
         self.command_preview = tk.Text(right, height=5, width=56, bg="#020617", fg="#7dd3fc", insertbackground="#7dd3fc")
-        self.command_preview.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(4, 12))
+        self.command_preview.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(4, 12))
         self.command_preview.configure(state="disabled")
 
-        self.performance_canvas = tk.Canvas(right, height=100, bg="#111827", highlightthickness=0)
-        self.performance_canvas.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        tk.Label(right, text="Live performance", fg="#cbd5e1", bg="#111827").grid(row=7, column=0, sticky="w")
-
-        tk.Label(right, text="Miner output", fg="#cbd5e1", bg="#111827").grid(row=8, column=0, sticky="w")
-        self.log_text = tk.Text(right, height=16, bg="#020617", fg="#f8fafc", insertbackground="#f8fafc")
-        self.log_text.grid(row=9, column=0, columnspan=2, sticky="nsew")
+        tk.Label(right, text="Miner output", fg="#cbd5e1", bg="#111827").grid(row=5, column=0, sticky="w")
+        self.log_text = tk.Text(right, height=18, bg="#020617", fg="#f8fafc", insertbackground="#f8fafc")
+        self.log_text.grid(row=6, column=0, columnspan=2, sticky="nsew")
         self.log_text.configure(state="disabled")
 
-        tk.Label(right, text="Security: settings are encrypted locally on this machine.", fg="#64748b", bg="#111827", font=("Segoe UI", 9)).grid(row=10, column=0, columnspan=2, sticky="w", pady=(8, 0))
-
-        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
-        self.root.bind("<Configure>", self._handle_window_state)
-
-    def _handle_window_state(self, event: object) -> None:
-        if event.widget == self.root and self.root.state() == "iconic" and self.bool_vars.get("minimize_to_tray", tk.BooleanVar()).get():
-            self._minimize_to_tray()
-
-    def _on_close(self) -> None:
-        self.controller.stop()
-        self._hide_tray_icon()
-        self.root.destroy()
-
-    def _minimize_to_tray(self) -> None:
-        if self.bool_vars.get("show_tray_icon", tk.BooleanVar()).get():
-            self._show_tray_icon()
-        self.root.withdraw()
-
-    def _show_tray_icon(self) -> None:
-        if self.tray_icon is not None:
-            return
-        try:
-            import pystray
-            from PIL import Image
-
-            image = Image.open(Path(__file__).resolve().parent.parent / "assets" / "logo.png")
-            menu = pystray.Menu(pystray.MenuItem("Restore", self._restore_from_tray), pystray.MenuItem("Exit", self._on_close))
-            self.tray_icon = pystray.Icon("MayanMiner", image, "Mayan Miner", menu)
-            threading.Thread(target=self.tray_icon.run, daemon=True).start()
-        except Exception:
-            self._append_log("Tray support unavailable. Install pystray and Pillow for a system tray icon.\n")
-
-    def _hide_tray_icon(self) -> None:
-        if self.tray_icon is not None:
-            try:
-                self.tray_icon.stop()
-            except Exception:
-                pass
-            self.tray_icon = None
-
-    def _restore_from_tray(self) -> None:
-        self.root.deiconify()
-        self._hide_tray_icon()
+        tk.Label(right, text="Security: settings are encrypted locally on this machine.", fg="#64748b", bg="#111827", font=("Segoe UI", 9)).grid(row=7, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
     def _browse_miner(self, target: "tk.StringVar") -> None:
         filename = filedialog.askopenfilename(title="Select miner executable", filetypes=[("Executable", "*.exe"), ("All files", "*.*")])
@@ -367,11 +240,7 @@ class MayanMinerApp:
             value = config.get(key, "")
             if isinstance(var, tk.StringVar):
                 var.set(str(value))
-        for key, var in self.bool_vars.items():
-            var.set(bool(config.get(key, False)))
-        self.theme_var.set(config.get("theme", "system"))
-        self._apply_theme(self.theme_var.get())
-        self._update_notice(config)
+        self.use_all_cores_var.set(bool(config.get("use_all_cores", True)))
         self._update_command_preview()
 
     def _collect_config(self) -> Dict[str, object]:
@@ -379,18 +248,8 @@ class MayanMinerApp:
         for key, var in self.vars.items():
             config[key] = var.get()
         config["threads"] = int(self.vars["threads"].get()) if str(self.vars["threads"].get()).isdigit() else 1
-        for key, var in self.bool_vars.items():
-            config[key] = bool(var.get())
-        config["theme"] = self.theme_var.get()
+        config["use_all_cores"] = bool(self.use_all_cores_var.get())
         return config
-
-    def _update_notice(self, config: Dict[str, object]) -> None:
-        wallet = str(config.get("developer_wallet", "")).strip()
-        fee = str(config.get("developer_fee", "")).strip()
-        if wallet and fee:
-            self.notice_var.set(f"Developer support: wallet configured with {fee}% fee contribution.")
-        else:
-            self.notice_var.set("Developer support notice: a small fee may be applied to contributions.")
 
     def _update_command_preview(self) -> None:
         config = self._collect_config()
@@ -405,88 +264,13 @@ class MayanMinerApp:
         self.log_text.insert(tk.END, message)
         self.log_text.see(tk.END)
         self.log_text.configure(state="disabled")
-        self._update_graph_from_line(message)
-
-    def _update_graph_from_line(self, message: str) -> None:
-        match = re.search(r"(?i)(\d+(?:\.\d+)?)\s*(k|m|g)?h/s", message)
-        if match:
-            amount = float(match.group(1))
-            unit = match.group(2).lower() if match.group(2) else ""
-            multiplier = {"k": 1000.0, "m": 1000000.0, "g": 1000000000.0}.get(unit, 1.0)
-            self.performance_history.append(amount * multiplier)
-        elif self.controller.is_running():
-            self.performance_history.append(float(len(self.performance_history) + 1))
-        if len(self.performance_history) > 40:
-            self.performance_history = self.performance_history[-40:]
-        self._render_graph()
-
-    def _render_graph(self) -> None:
-        self.performance_canvas.delete("all")
-        if not self.performance_history:
-            return
-        width = self.performance_canvas.winfo_width() or 640
-        height = self.performance_canvas.winfo_height() or 100
-        if width < 10:
-            width = 640
-        if height < 10:
-            height = 100
-        max_value = max(self.performance_history) or 1
-        step = width / max(1, len(self.performance_history) - 1)
-        points = []
-        for index, value in enumerate(self.performance_history):
-            x = index * step
-            y = height - (value / max_value) * (height - 12) - 6
-            points.append((x, y))
-        self.performance_canvas.create_line(*sum(points, ()), fill="#38bdf8", width=2)
-        self.performance_canvas.create_rectangle(0, 0, width, height, outline="#234", fill="")
 
     def _save_config(self) -> None:
         config = self._collect_config()
         self.config_manager.save_config(config)
-        self._apply_theme(str(config.get("theme", "system")))
-        self._update_notice(config)
         self._update_command_preview()
         self.status_var.set("Settings saved")
         messagebox.showinfo("Saved", "Configuration saved locally and encrypted.")
-        if bool(config.get("start_on_login", False)):
-            self._configure_startup_shortcut(True)
-        else:
-            self._configure_startup_shortcut(False)
-
-    def _export_config(self) -> None:
-        path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON files", "*.json"), ("All files", "*.*")])
-        if not path:
-            return
-        self.config_manager.export_config(path)
-        self.status_var.set("Configuration exported")
-        messagebox.showinfo("Exported", f"Configuration export saved to {path}")
-
-    def _import_config(self) -> None:
-        path = filedialog.askopenfilename(filetypes=[("JSON files", "*.json"), ("All files", "*.*")])
-        if not path:
-            return
-        self.config_manager.import_config(path)
-        self._populate_from_config()
-        self._update_command_preview()
-        self.status_var.set("Configuration imported")
-        messagebox.showinfo("Imported", f"Configuration imported from {path}")
-
-    def _configure_startup_shortcut(self, enable: bool) -> None:
-        if os.name != "nt":
-            return
-        startup_dir = Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
-        if not startup_dir.exists():
-            startup_dir.mkdir(parents=True, exist_ok=True)
-        shortcut_path = startup_dir / "MayanMiner.cmd"
-        if enable:
-            target = Path(sys.executable).resolve()
-            content = f'@echo off\n"{target}" "{Path(__file__).resolve().parent.parent / "main.py"}"\n'
-            shortcut_path.write_text(content, encoding="utf-8")
-        else:
-            try:
-                shortcut_path.unlink(missing_ok=True)
-            except Exception:
-                pass
 
     def _stream_output(self) -> None:
         process = self.controller.process
@@ -505,8 +289,8 @@ class MayanMinerApp:
         self.log_text.configure(state="disabled")
         self._append_log("Starting miner...\n")
         self.controller.stop()
-        started = self.controller.start(config)
-        if started and self.controller.is_running():
+        self.controller.start(config)
+        if self.controller.is_running():
             self.status_var.set("Mining is running")
             self.output_thread = threading.Thread(target=self._stream_output, daemon=True)
             self.output_thread.start()

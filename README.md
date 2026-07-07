@@ -6,9 +6,14 @@ Mayan Miner is an open-source, Windows-first CPU mining launcher with a polished
 - Modern desktop UI for mining settings and live output
 - Built-in XMRig installation and automatic miner updates
 - Real miner launch support with custom pools, wallets, worker names, algorithms, and extra arguments
+- Fully custom algorithm names (type any algorithm your miner supports, not just the presets)
+- "Custom" miner kind can drive any other miner executable, including one with its own CLI syntax,
+  via an optional command template (`{executable} {pool} {wallet} {worker} {password} {algorithm}
+  {threads} {extra_args}` placeholders)
 - Encrypted local configuration storage
 - Built-in developer wallet and 0.2% fee note
-- Windows executable packaging with PyInstaller
+- Windows executable packaging with PyInstaller, with the app logo bundled as both the in-app icon
+  and the .exe file icon, plus a SHA256 checksum published alongside each build for integrity checks
 
 ## Default developer wallet
 - XMR: 4AmMooquAZ3JUAjuJTEDNZSxw9gmR5VuaMzKrmxjfHXuh1TGYdu3QxuEXLPhhSTZFmcA5DYfyGn3Z4Nfa27ionur4wwha1o

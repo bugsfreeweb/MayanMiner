@@ -14,6 +14,19 @@ except ImportError:  # pragma: no cover - optional dependency
 
 def default_config() -> Dict[str, Any]:
     return {
+        # New UI and application settings
+        "start_mining_on_login": False,
+        "minimize_to_tray": False,
+        "show_tray_icon": True,
+        "show_splashscreen_next": True, # For animated splash screen
+        "theme": "system", # Options: "light", "dark", "system"
+        "miner_settings_path": str(_app_dir() / "miner_settings.json"), # Specific place for settings file
+        # Custom algorithm options
+        "custom_algo_options": {},
+        "known_algorithms": [
+            "rx/0", "cn/0", "cn/1", "cn/2", "cn-heavy/0", "cn/r",
+            "etchash", "kawpow", "sha256", "argon2/chukwa",
+        ], # Example known algos - the algorithm field also accepts any custom text
         "pool": "mine.example.com:3333",
         "wallet": "YOUR_WALLET",
         "worker": "mayan-cpu",
@@ -21,14 +34,14 @@ def default_config() -> Dict[str, Any]:
         "algorithm": "rx/0",
         "threads": max(1, os.cpu_count() or 1),
         "use_all_cores": True,
-        "start_on_login": False,
-        "minimize_to_tray": False,
-        "show_tray_icon": False,
-        "show_splash_screen": True,
-        "theme": "system",
         "miner_executable": "",
         "miner_kind": "xmrig",
         "extra_args": "",
+        # Used only when miner_kind == "custom". Lets the app drive ANY third-party
+        # miner binary with its own CLI syntax. Supports {executable}, {pool},
+        # {wallet}, {worker}, {password}, {algorithm}, {threads}, {extra_args}
+        # placeholders. Leave blank to fall back to "<executable> <extra_args>".
+        "custom_command_template": "",
         "developer_wallet": "4AmMooquAZ3JUAjuJTEDNZSxw9gmR5VuaMzKrmxjfHXuh1TGYdu3QxuEXLPhhSTZFmcA5DYfyGn3Z4Nfa27ionur4wwha1o",
         "developer_fee": "0.2",
     }
@@ -83,19 +96,6 @@ class SecureConfigManager:
         merged = default_config()
         merged.update(loaded)
         return merged
-
-    def export_config(self, path: str | Path) -> None:
-        output_path = Path(path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(json.dumps(self.load_config(), indent=2, sort_keys=True), encoding="utf-8")
-
-    def import_config(self, path: str | Path) -> None:
-        input_path = Path(path)
-        with input_path.open("r", encoding="utf-8") as handle:
-            loaded = json.load(handle)
-        merged = default_config()
-        merged.update(loaded)
-        self.save_config(merged)
 
 
 def _xor_encrypt(payload: bytes, key: bytes) -> bytes:

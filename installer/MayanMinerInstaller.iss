@@ -1,4 +1,5 @@
 #define SourceExe "..\\output\\MayanMiner.exe"
+#define SourceIcon "..\\assets\\logo.ico"
 
 [Setup]
 AppName=Mayan Miner
@@ -12,6 +13,7 @@ OutputDir=..\output
 Compression=lzma
 SolidCompression=yes
 DisableStartupPrompt=yes
+SetupIconFile={#SourceIcon}
 UninstallDisplayIcon={app}\MayanMiner.exe
 Uninstallable=yes
 ModifyPath=yes

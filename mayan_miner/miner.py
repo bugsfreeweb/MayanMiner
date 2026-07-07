@@ -4,33 +4,12 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from mayan_miner.config import _app_dir
 from mayan_miner.updater import get_installed_miner_path
 
 
 def _default_installed_miner() -> str:
     default_path = get_installed_miner_path()
     return str(default_path) if default_path.exists() else "xmrig"
-
-
-def _normalize_algorithm(algorithm: Any, miner_kind: str) -> str:
-    value = str(algorithm or "rx/0").strip().lower()
-    aliases = {
-        "rx/0": "randomx",
-        "randomx": "randomx",
-        "rx": "randomx",
-        "cn/0": "cn/0",
-        "cn/1": "cn/1",
-        "cn/2": "cn/2",
-        "cn-lite": "cn-lite",
-        "kawpow": "kawpow",
-        "sha256": "sha256",
-        "ethash": "ethash",
-        "custom": "custom",
-    }
-    if miner_kind == "srbminer":
-        return aliases.get(value, str(algorithm or "rx/0"))
-    return aliases.get(value, str(algorithm or "rx/0"))
 
 
 def build_miner_command(config: Dict[str, Any]) -> List[str]:
@@ -40,11 +19,43 @@ def build_miner_command(config: Dict[str, Any]) -> List[str]:
     wallet = config.get("wallet") or "YOUR_WALLET"
     worker = config.get("worker") or "mayan-cpu"
     password = config.get("password") or "x"
-    algorithm = _normalize_algorithm(config.get("algorithm"), miner_kind)
+    algorithm = config.get("algorithm") or "rx/0"
     threads = config.get("threads") or max(1, os.cpu_count() or 1)
 
+    extra_args = config.get("extra_args", "")
+
     if miner_kind == "custom":
+        # A "custom" miner kind lets this app drive literally any other miner
+        # executable, which may use a completely different CLI syntax (or none
+        # of the standard xmrig-style flags at all). If the user has supplied a
+        # command template, render it with the current settings - including the
+        # chosen algorithm, which previously had no effect for custom miners.
+        template = str(config.get("custom_command_template") or "").strip()
+        if template:
+            fields = {
+                "executable": executable,
+                "pool": pool,
+                "wallet": wallet,
+                "worker": worker,
+                "password": password,
+                "algorithm": algorithm,
+                "threads": str(threads),
+                "extra_args": extra_args,
+            }
+            try:
+                rendered = template.format(**fields)
+            except (KeyError, IndexError, ValueError):
+                # Fall back to the raw template text if it has bad/unknown
+                # placeholders, rather than crashing the whole app.
+                rendered = template
+            return shlex.split(rendered)
+
+        # No template: keep the original, minimal behavior (bare executable +
+        # extra args), but still expose --algo when the user has typed a
+        # non-default algorithm so a custom-but-xmrig-like miner can pick it up.
         command = [executable]
+        if algorithm and algorithm != "rx/0":
+            command.extend(["--algo", algorithm])
     elif miner_kind == "srbminer":
         command = [executable, "--algorithm", algorithm, "--pool", pool, "--wallet", wallet, "--password", password]
         if threads:
@@ -67,7 +78,6 @@ def build_miner_command(config: Dict[str, Any]) -> List[str]:
     if bool(config.get("use_all_cores", True)) and miner_kind != "custom":
         command.append("--use-all-cores")
 
-    extra_args = config.get("extra_args", "")
     if extra_args:
         command.extend(shlex.split(extra_args))
     return command
@@ -83,24 +93,15 @@ class MinerController:
         if os.name == "nt":
             creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-        working_dir = Path(config.get("working_dir") or (_app_dir() / "workdir"))
-        working_dir.mkdir(parents=True, exist_ok=True)
-        cache_dir = working_dir / "Cache"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-
-        try:
-            self.process = subprocess.Popen(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL,
-                text=True,
-                bufsize=1,
-                creationflags=creationflags,
-                cwd=str(working_dir),
-            )
-        except OSError:
-            self.process = None
+        self.process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            bufsize=1,
+            creationflags=creationflags,
+        )
         return self.process
 
     def stop(self) -> None:

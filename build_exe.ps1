@@ -12,6 +12,19 @@ if (-not (Test-Path $buildDir)) {
 }
 
 python -m pip install --disable-pip-version-check -r requirements.txt
-python -m PyInstaller --clean --noconfirm --onefile --windowed --name MayanMiner --distpath $outputDir --workpath $buildDir --specpath $buildDir main.py
+
+$assetsDir = Join-Path $projectRoot "assets"
+$iconPath = Join-Path $assetsDir "logo.ico"
+python -m PyInstaller --clean --noconfirm --onefile --windowed --name MayanMiner `
+    --icon "$iconPath" `
+    --add-data "$assetsDir\logo.png;assets" `
+    --distpath $outputDir --workpath $buildDir --specpath $buildDir main.py
+
+$exePath = Join-Path $outputDir "MayanMiner.exe"
+if (Test-Path $exePath) {
+    $hash = Get-FileHash -Path $exePath -Algorithm SHA256
+    $hash.Hash | Out-File -Encoding ascii (Join-Path $outputDir "MayanMiner.exe.sha256")
+    Write-Host "SHA256: $($hash.Hash)"
+}
 
 Write-Host "Build complete. Output file is located at $outputDir\MayanMiner.exe"
