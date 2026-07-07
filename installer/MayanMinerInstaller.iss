@@ -35,3 +35,19 @@ Name: "desktopicon"; Description: "Create a desktop icon"; GroupDescription: "Ad
 
 [Run]
 Filename: "{app}\MayanMiner.exe"; Description: "Launch Mayan Miner"; Flags: nowait postinstall skipifsilent
+
+[Code]
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  DataDir: string;
+begin
+  if CurUninstallStep = usPostUninstall then
+  begin
+    DataDir := ExpandConstant('{userappdata}\MayanMiner');
+    if DirExists(DataDir) then
+    begin
+      if MsgBox('Do you also want to remove your saved Mayan Miner settings, wallet, and downloaded miner (stored in ' + DataDir + ')?', mbConfirmation, MB_YESNO) = IDYES then
+        DelTree(DataDir, True, True, True);
+    end;
+  end;
+end;

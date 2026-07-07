@@ -37,6 +37,7 @@ $iconPath = Join-Path $assetsDir "logo.ico"
 & $python -m PyInstaller --clean --noconfirm --onefile --windowed --name MayanMiner `
     --icon "$iconPath" `
     --add-data "$assetsDir\logo.png;assets" `
+    --hidden-import pystray._win32 `
     --distpath $tempDist --workpath $tempBuild --specpath $tempBuild main.py
 if ($LASTEXITCODE -ne 0) {
     Write-Error "PyInstaller build failed."

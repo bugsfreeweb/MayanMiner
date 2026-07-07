@@ -20,6 +20,7 @@ def default_config() -> Dict[str, Any]:
         "show_tray_icon": True,
         "show_splashscreen_next": True, # For animated splash screen
         "theme": "system", # Options: "light", "dark", "system"
+        "graph_history_points": 90, # Rolling window size for the live hashrate graph
         "miner_settings_path": str(_app_dir() / "miner_settings.json"), # Specific place for settings file
         # Custom algorithm options
         "custom_algo_options": {},

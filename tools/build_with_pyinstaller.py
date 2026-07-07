@@ -27,6 +27,7 @@ args = [
     '--name', 'MayanMiner',
     '--icon', str(icon_path),
     '--add-data', logo_data_arg,
+    '--hidden-import', 'pystray._win32',
     '--distpath', str(distpath),
     '--workpath', str(workpath),
     '--specpath', str(specpath),

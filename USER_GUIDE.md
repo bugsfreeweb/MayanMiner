@@ -27,11 +27,29 @@ installer\build_installer.ps1` from PowerShell.
 - Alternatively, use the uninstall shortcut created in the Start menu.
 
 ## Using Mayan Miner
-1. Open the app.
-2. Enter your pool URL, wallet address, worker name, and mining algorithm.
-3. Select the CPU miner executable on your machine.
-4. Click "Start mining".
-5. Click "Stop" to end the session.
+1. Open the app (an optional splash screen appears briefly first — toggle this in Settings).
+2. Go to the **Settings** tab: enter your pool URL, wallet address, worker name, and mining algorithm
+   (type any custom algorithm name your miner supports), pick a miner kind, and point it at your CPU
+   miner executable. Custom miner apps can use their own command syntax via the command template field.
+3. Click "Save settings".
+4. Go to the **Dashboard** tab and click "Start mining".
+5. Watch the live hashrate graph and the status/hashrate/shares/uptime cards update in real time from
+   the miner's own output. Click "Stop" to end the session.
+
+## Uninstalling Mayan Miner
+- Open Windows Settings > Apps > Apps & features.
+- Find `Mayan Miner` and choose Uninstall.
+- Alternatively, use the uninstall shortcut created in the Start menu.
+- You'll be asked whether to also remove your saved settings (in `%APPDATA%\MayanMiner`), or keep them.
+
+## Background mining, tray, and startup options
+- In Settings > Appearance & behavior, "Keep running in the tray when minimized or closed" lets Mayan
+  Miner keep mining in the background instead of quitting — right-click the tray icon to reopen it,
+  start/stop mining, or exit for real.
+- "Start Mayan Miner (and mining) when I log into Windows" registers the app to launch automatically
+  at login (Windows only), starting minimized to the tray.
+- All settings, the encryption key, and the downloaded miner binary live in `%APPDATA%\MayanMiner`
+  (Settings tab has an "Open data folder" shortcut).
 
 ## Notes for new users
 - The app is a launcher: it requires a real CPU miner executable such as XMRig.

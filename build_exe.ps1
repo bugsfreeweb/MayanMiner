@@ -18,6 +18,7 @@ $iconPath = Join-Path $assetsDir "logo.ico"
 python -m PyInstaller --clean --noconfirm --onefile --windowed --name MayanMiner `
     --icon "$iconPath" `
     --add-data "$assetsDir\logo.png;assets" `
+    --hidden-import pystray._win32 `
     --distpath $outputDir --workpath $buildDir --specpath $buildDir main.py
 
 $exePath = Join-Path $outputDir "MayanMiner.exe"
