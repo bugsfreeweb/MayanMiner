@@ -4,6 +4,7 @@ import shlex
 import subprocess
 import sys
 import threading
+import webbrowser
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -36,7 +37,7 @@ except ImportError:
 from mayan_miner.autostart import set_autostart
 from mayan_miner.config import SecureConfigManager, default_config, _app_dir
 from mayan_miner.miner import MinerController, build_miner_command
-from mayan_miner.stats import MiningStatsTracker
+from mayan_miner.stats import MiningStatsTracker, sanitize_line
 from mayan_miner.tray import TrayManager
 from mayan_miner.updater import (
     download_latest_xmrig,
@@ -62,12 +63,14 @@ DARK_PALETTE = {
     "heading": "#f8fafc", "text": "#e2e8f0", "muted": "#94a3b8", "faint": "#64748b",
     "accent": "#06b6d4", "primary": "#10b981", "primary_hover": "#0ea46a", "danger": "#f87171",
     "border": "#1e293b", "console_bg": "#020617", "console_text": "#f8fafc", "nav_active": "#111827",
+    "chart_line": "#34d399", "chart_fill": "#0f3b2c", "chart_grid": "#1e293b", "warning": "#f59e0b",
 }
 LIGHT_PALETTE = {
     "bg": "#eef2f7", "surface": "#ffffff", "card": "#ffffff", "card_alt": "#f8fafc",
     "heading": "#0b1220", "text": "#1e293b", "muted": "#64748b", "faint": "#94a3b8",
     "accent": "#0891b2", "primary": "#059669", "primary_hover": "#047857", "danger": "#dc2626",
     "border": "#e2e8f0", "console_bg": "#0f172a", "console_text": "#e2e8f0", "nav_active": "#e2e8f0",
+    "chart_line": "#059669", "chart_fill": "#d1fae5", "chart_grid": "#e2e8f0", "warning": "#d97706",
 }
 
 
@@ -110,6 +113,34 @@ class MayanMinerApp:
     # ------------------------------------------------------------------ #
     # Theme / chrome
     # ------------------------------------------------------------------ #
+    def _widget_palette(self) -> Dict[str, str]:
+        """Map the app-level theme palette onto the color keys that the
+        theme-aware StatCard / RealtimeChart widgets expect.
+
+        Without this, those widgets fell back to their own hardcoded
+        (dark-only) default colors regardless of which theme was selected,
+        which is why the dashboard looked wrong / inconsistent on the light
+        theme.
+        """
+        c = self.colors
+        return {
+            "card": c["card"],
+            "card_alt": c["card_alt"],
+            "card_label_fg": c["muted"],
+            "value_fg": c["heading"],
+            "console_bg": c["console_bg"],
+            "console_text": c["console_text"],
+            "accent": c["accent"],
+            "muted": c["muted"],
+            "faint": c["faint"],
+            "line_color": c["chart_line"],
+            "fill_color": c["chart_fill"],
+            "grid_color": c["chart_grid"],
+            "success": c["primary"],
+            "warning": c["warning"],
+            "danger": c["danger"],
+        }
+
     def _apply_ttk_theme(self) -> None:
         c = self.colors
         style = ttk.Style(self.root)
@@ -214,10 +245,11 @@ class MayanMinerApp:
         for i in range(4):
             cards_row.grid_columnconfigure(i, weight=1)
 
-        self.status_card = StatCard(cards_row, title="STATUS", initial_value="Ready", accent=c["primary"])
-        self.hashrate_card = StatCard(cards_row, title="HASHRATE", initial_value="0 H/s", accent=c["accent"])
-        self.shares_card = StatCard(cards_row, title="ACCEPTED / REJECTED", initial_value="0 / 0", accent=c["primary"])
-        self.uptime_card = StatCard(cards_row, title="UPTIME", initial_value="00:00:00", accent=c["muted"])
+        palette = self._widget_palette()
+        self.status_card = StatCard(cards_row, title="STATUS", initial_value="Ready", accent=c["primary"], palette=palette)
+        self.hashrate_card = StatCard(cards_row, title="HASHRATE", initial_value="0 H/s", accent=c["accent"], palette=palette)
+        self.shares_card = StatCard(cards_row, title="ACCEPTED / REJECTED", initial_value="0 / 0", accent=c["primary"], palette=palette)
+        self.uptime_card = StatCard(cards_row, title="UPTIME", initial_value="00:00:00", accent=c["muted"], palette=palette)
         for index, card in enumerate((self.status_card, self.hashrate_card, self.shares_card, self.uptime_card)):
             card.grid(row=0, column=index, sticky="nsew", padx=(0 if index == 0 else 8, 0))
 
@@ -225,7 +257,7 @@ class MayanMinerApp:
         chart_card.grid(row=1, column=0, sticky="ew", pady=(0, 12))
         chart_card.grid_columnconfigure(0, weight=1)
         tk.Label(chart_card, text="Live hashrate", fg=c["heading"], bg=c["card"], font=("Segoe UI", 12, "bold")).grid(row=0, column=0, sticky="w")
-        self.chart = RealtimeChart(chart_card, height=180, bg=c["console_bg"])
+        self.chart = RealtimeChart(chart_card, height=180, palette=palette)
         self.chart.grid(row=1, column=0, sticky="ew", pady=(8, 0))
 
         console_card = tk.Frame(parent, bg=c["card"], padx=16, pady=14)
@@ -246,6 +278,43 @@ class MayanMinerApp:
         controls.grid(row=2, column=0, sticky="w")
         ttk.Button(controls, text="Start mining", command=self._start_mining, style="Primary.TButton").pack(side="left", padx=(0, 8))
         ttk.Button(controls, text="Stop", command=self._stop_mining, style="Secondary.TButton").pack(side="left")
+
+        self._build_dashboard_footer(parent)
+
+    def _build_dashboard_footer(self, parent: "tk.Frame") -> None:
+        c = self.colors
+        footer = tk.Frame(parent, bg=c["bg"])
+        footer.grid(row=3, column=0, sticky="ew", pady=(10, 2))
+        footer.grid_columnconfigure(0, weight=1)
+
+        links_row = tk.Frame(footer, bg=c["bg"])
+        links_row.grid(row=0, column=0)  # no sticky -> stays centered in the cell
+
+        footer_links = (
+            ("\U0001F310", "Website", "https://mayanminer.vercel.app"),
+            ("\U0001F512", "Privacy", "https://mayanminer.vercel.app/privacy.html"),
+            ("\u2753", "How to use", "https://mayanminer.vercel.app/howtouse.html"),
+            ("\u2764", "Donate", "https://mayanminer.vercel.app/donate.html"),
+            ("\U0001F419", "GitHub", "https://github.com/bugsfreeweb/mayanminer"),
+        )
+
+        self._footer_link_labels = []
+        for index, (icon, label, url) in enumerate(footer_links):
+            link = tk.Label(
+                links_row, text=f"{icon}  {label}", fg=c["muted"], bg=c["bg"],
+                font=("Segoe UI", 9, "bold"), cursor="hand2", padx=10,
+            )
+            link.grid(row=0, column=index)
+            link.bind("<Button-1>", lambda _event, u=url: webbrowser.open(u))
+            link.bind("<Enter>", lambda _event, w=link: w.configure(fg=c["accent"]))
+            link.bind("<Leave>", lambda _event, w=link: w.configure(fg=c["muted"]))
+            self._footer_link_labels.append(link)
+
+        credit = tk.Label(
+            footer, text="\u00A9 Mayan Miner \u2014 crafted by bugsfreeweb",
+            fg=c["faint"], bg=c["bg"], font=("Segoe UI", 8),
+        )
+        credit.grid(row=1, column=0, pady=(4, 0))
 
     def _clear_log(self) -> None:
         self.log_text.configure(state="normal")
@@ -466,8 +535,12 @@ class MayanMinerApp:
         self.command_preview.configure(state="disabled")
 
     def _append_log(self, message: str) -> None:
+        # Strip ANSI / VT escape codes from the rendered log too, otherwise
+        # XMRig's colorized output (emitted even on a piped stdout on
+        # Windows) shows up as raw "\x1b[1m\x1b[32m..." garbage in the log.
+        clean_message = sanitize_line(message)
         self.log_text.configure(state="normal")
-        self.log_text.insert(tk.END, message)
+        self.log_text.insert(tk.END, clean_message)
         self.log_text.see(tk.END)
         self.log_text.configure(state="disabled")
         if self.stats.feed_line(message):

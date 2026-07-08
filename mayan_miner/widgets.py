@@ -32,11 +32,16 @@ class RealtimeChart(tk.Canvas):
         **kwargs,
     ) -> None:
         p = {**_FALLBACK, **(palette or {})}
+        # `bg` may already be present in kwargs if the caller passed it explicitly
+        # (older call sites did this). Pop it out first so we never pass `bg`
+        # twice to Canvas.__init__, which raises "multiple values for keyword
+        # argument 'bg'" and crashes the whole dashboard on startup.
+        bg_color = kwargs.pop("bg", p["console_bg"])
         super().__init__(
             master,
             width=width,
             height=height,
-            bg=p["console_bg"],
+            bg=bg_color,
             highlightthickness=0,
             **kwargs,
         )
