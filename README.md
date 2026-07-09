@@ -1,18 +1,22 @@
-# Mayan Miner v1.1.0
+# Mayan Miner v1.2.0
 
 Open-source Windows-first CPU/GPU mining launcher with a polished desktop dashboard, live monitoring, automation features, and built-in XMRig installer.
 
 ## Features
-- **Dashboard**: 10 real-time stat cards (status, hashrate, shares, uptime, last share + earnings, latency, GPU/CPU temp, restarts), live hashrate chart, miner output console
-- **Stats**: Performance tab (hashrate chart with 1h/4h/6h/12h/24h/All time-range buttons, ShareFeed event column) and System tab (connection status, drops, uptime, worker, threads, peak hashrate)
-- **Settings** organized across 6 tabs: Pool (multi-pool failover), GPU (NVIDIA CUDA), Miner (algorithm, threads, TLS, proxy, custom template), General (splash, tray, login, theme), Automation (auto-restart, scheduled mining, persistent log), Profiles
-- **Live earnings estimate** via CoinGecko XMR/USD price feed
+- **Dashboard**: 12 real-time stat cards (status, hashrate, shares, uptime, last share, est. earnings, pool latency, GPU/CPU temp, restarts, blocks found), live hashrate chart, miner output console with expand/collapse toggle, animated canvas-based coin/algo banner with pulse effect
+- **Stats**: Performance tab (hashrate chart with 1h/4h/6h/12h/24h/All time-range buttons, ShareFeed event column) and System tab (connection status, drops, uptime, worker, threads, peak hashrate, active pool info)
+- **Multi-pool management** with per-pool enable/disable, app-level pool failover (auto-switches to next enabled pool on connection drop or crash), editable algorithm + coin per pool
+- **Settings** organised across 6 tabs: Pool (multi-pool add/edit/remove/toggle), GPU (NVIDIA CUDA), Miner (algorithm, threads, TLS, proxy, custom template, set-algo-as-default reorders pool list), General (splash, tray, login, theme), Automation (auto-restart, scheduled mining, persistent log), Profiles
+- **Live earnings estimate** via CoinGecko XMR/USD price feed (earnings hidden for non-XMR coins like RVN, ETH, ETC)
 - **Pool latency** measurement (ping)
 - **GPU/CPU temperature** monitoring
+- **Blocks found** counter — detected from miner output with flash notification
+- **Animated banner** — canvas-based colour-cycling text + pulsing progress bar showing active coin, algorithm, pool index, and hashrate
 - **Configuration Profiles** — save/load/delete named profiles for one-click setup switching
 - **Config export/import** to/from JSON for backup
 - **Dark/Light theme** toggle — applies immediately, no restart
 - **Auto-restart** on miner crash with configurable retries and delay
+- **Pool failover** — cycles through enabled pools automatically on sustained connection loss
 - **Scheduled mining** — set start/end HH:MM window
 - **Persistent mining log** (auto-rotated, saved to data folder)
 - **Auto-start countdown** on splash screen
@@ -76,7 +80,7 @@ When a GitHub release is created, the release workflow will automatically:
 - `mayan_miner/` — application package
   - `app.py` — Tk UI (dashboard + stats + settings tabs)
   - `widgets.py` — live chart, stat-card, and ShareFeed widgets
-  - `stats.py` — parses live miner stdout into hashrate/shares history
+  - `stats.py` — parses live miner stdout into hashrate/shares history + block detection
   - `splash.py` — optional startup splash screen
   - `tray.py` — system tray integration
   - `autostart.py` — Windows "start on login" registry helper
@@ -85,6 +89,7 @@ When a GitHub release is created, the release workflow will automatically:
 - `output/` — packaged build artifacts (ignored by git)
 - `tests/` — unit tests
 - `assets/` — icons and images
+- `version_info.txt` — EXE metadata (FileVersion, ProductVersion, CompanyName, etc.)
 
 ## Repository
 https://github.com/bugsfreeweb/MayanMiner

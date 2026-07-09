@@ -1,25 +1,28 @@
-# Mayan Miner v1.1.0 User Guide
+# Mayan Miner v1.2.0 User Guide
 
 ## Table of Contents
 1. [Quick Start](#quick-start)
 2. [Dashboard](#dashboard)
-3. [Stats Tab](#stats-tab)
-4. [Settings Tab](#settings-tab)
-5. [Configuration Profiles](#configuration-profiles)
-6. [Automation](#automation)
-7. [Theme](#theme)
-8. [Tray & Startup](#tray--startup)
-9. [Frequently Asked Questions](#frequently-asked-questions)
+3. [Animated Banner](#animated-banner)
+4. [Miner Output Log & Collapse](#miner-output-log--collapse)
+5. [Multi-Pool Management](#multi-pool-management)
+6. [Stats Tab](#stats-tab)
+7. [Settings Tab](#settings-tab)
+8. [Configuration Profiles](#configuration-profiles)
+9. [Automation](#automation)
+10. [Theme](#theme)
+11. [Tray & Startup](#tray--startup)
+12. [Frequently Asked Questions](#frequently-asked-questions)
 
 ---
 
 ## Quick Start
 
 1. Launch Mayan Miner (a splash screen appears briefly).
-2. Go to **Settings > Pool** — enter your pool URL and wallet address.
+2. Go to **Settings > Pool** — click **Add pool**, enter your pool URL and wallet address.
 3. Click **Save settings** at the bottom.
 4. Go to **Dashboard** and click **Start mining**.
-5. Watch live hashrate, shares, and monitoring cards update in real time.
+5. Watch live hashrate, shares, blocks found, and monitoring cards update in real time.
 
 If you do not have XMRig installed, click **Install / update XMRig** on the Settings page — Mayan Miner will download the correct build for your system automatically.
 
@@ -27,13 +30,13 @@ If you do not have XMRig installed, click **Install / update XMRig** on the Sett
 
 ## Dashboard
 
-The main view shows 10 stat cards in two rows:
+The main view shows 12 stat cards in two rows:
 
 **Row 1** — Mining status
 | Card | Description |
 |------|-------------|
 | STATUS | Current miner status (Ready / Mining / Stopped / Failed) |
-| HASHRATE | Current hashrate |
+| HASHRATE | Current hashrate (updates every second) |
 | ACCEPTED / REJECTED | Share counts |
 | UPTIME | Mining session duration |
 | LAST SHARE | Time since last share accepted |
@@ -41,16 +44,72 @@ The main view shows 10 stat cards in two rows:
 **Row 2** — Live monitoring
 | Card | Description |
 |------|-------------|
-| EST. EARNINGS | Estimated daily earnings in USD or XMR (fetched from CoinGecko every 5 min) |
+| EST. EARNINGS | Estimated daily earnings in USD or XMR. Hidden for non-XMR coins (RVN, ETH, ETC, etc.) and shows the coin name instead. |
 | POOL LATENCY | Ping to the pool server (measured every 30s) |
 | GPU TEMP | GPU temperature and fan speed (NVIDIA only) |
 | CPU TEMP | CPU temperature |
 | RESTARTS | Auto-restart attempt counter |
+| BLOCKS FOUND | Number of blocks mined (detected from miner output; flashes cyan on new block) |
+
+Cards are compact-sized to leave more room for the chart and console.
 
 Below the cards:
-- **Live hashrate chart** — plots your hashrate over time
-- **Miner output console** — full miner stdout/stderr with a **Clear** button
+- **Animated banner** (see below)
+- **Live hashrate chart** — plots your hashrate over time with a share flash effect
+- **Miner output console** — full miner stdout/stderr with **Clear** and **Collapse/Expand** buttons
 - **Start mining / Stop** buttons
+
+---
+
+## Animated Banner
+
+Positioned at the top of the dashboard (row 0), the canvas-based animated banner shows:
+
+- **Coin name** (e.g. Monero (XMR), Ravencoin (RVN), Ethereum (ETH))
+- **Algorithm** (e.g. rx/0, kawpow, ethash)
+- **Pool index** — `[1/3]` when multiple enabled pools exist
+- **Current hashrate** when mining is active
+
+The text colour cycles through a pulsing hue, and a glowing progress bar animates below the text. When not mining, it displays "Ready" in muted grey.
+
+---
+
+## Miner Output Log & Collapse
+
+The console at the bottom of the dashboard can be collapsed to give the hashrate chart more vertical space:
+
+- Click **▲ Collapse** — the log text area hides and the chart expands to fill the gap
+- Click **▼ Expand** — the log reappears and the chart returns to its normal size
+
+Use **Clear** to empty the log at any time.
+
+---
+
+## Multi-Pool Management
+
+Mayan Miner v1.3.0 supports independent pools, each with its own:
+
+- URL, wallet, worker, password
+- Algorithm + coin (auto-detected coin name from algorithm)
+- Enabled/disabled toggle
+
+**How it works:**
+1. Go to **Settings > Pool**.
+2. Click **Add pool** to add a new pool entry.
+3. Each pool stores its own algorithm and coin selection.
+4. The first **enabled** pool in the list is used for mining.
+5. Use the **Toggle enabled** button to enable/disable a pool (the button text updates to "Enable pool" or "Disable pool" based on the selected pool's state).
+6. Use **Set as default** in the Miner tab to reorder the pool list — the matching pool moves to the top.
+
+**Pool failover:**
+- If the miner crashes or the connection drops twice, the app automatically switches to the next enabled pool and restarts mining.
+- A `[failover]` message appears in the log indicating the switch.
+- If no more pools are available, standard auto-restart logic takes over.
+
+**Pool selection in the dashboard list:**
+- ✓ = enabled, ✗ = disabled
+- ▶ = currently active pool (shown during mining)
+- Coin name in `[brackets]` helps identify each pool
 
 ---
 
@@ -64,7 +123,7 @@ Two sub-tabs:
 - Info: active coin, algorithm, accepted/rejected counts, acceptance rate, pool explorer link
 
 ### System
-- Connection status, connection drops, miner uptime, worker name, CPU/GPU thread counts, peak hashrate
+- Connection status, connection drops, miner uptime, worker name, CPU/GPU thread counts, peak hashrate, active pool URL and wallet
 
 ---
 
@@ -73,7 +132,7 @@ Two sub-tabs:
 Organised into 6 tabs:
 
 ### Pool
-- Add / Edit / Remove pools (first enabled pool is primary). Supports failover.
+- Add / Edit / Remove / Toggle enabled pools. Each pool has its own URL, wallet, worker, password, algorithm, and enabled flag. The list shows coin names and active status.
 
 ### GPU
 - Enable GPU mining, select GPU devices, set GPU threads per device.
@@ -81,6 +140,7 @@ Organised into 6 tabs:
 ### Miner
 - Miner kind (XMRig / SRBMiner / custom)
 - Algorithm, CPU threads, use-all-cores toggle
+- **Set as default** — reorders the pool list so the pool with this algorithm becomes first
 - Miner executable path (Browse or use Install/Update button)
 - Extra args, TLS, proxy, custom command template
 - Live command preview
@@ -130,6 +190,9 @@ Profiles store all pool, miner, GPU, and connection settings for quick switching
 ### Auto-restart
 If the miner crashes, Mayan Miner can restart it automatically. Configure the maximum number of retry attempts and the delay between restarts.
 
+### Pool failover
+When enabled with multiple pools, sustained connection drops (2+) or a miner crash triggers failover to the next enabled pool in the list — no manual intervention needed.
+
 ### Scheduled mining
 Set a daily time window (e.g., 22:00 to 08:00) for automatic mining. The app starts/stops the miner when the window opens/closes.
 
@@ -166,7 +229,19 @@ A: Go to **Settings > General**, select Light, click **Apply**. The change is im
 A: Go to **Settings > Profiles**, click **Export config**. Save the JSON file to a safe location. To restore, click **Import config** and select the file.
 
 **Q: My saved profiles disappeared.**
-A: This was a bug in v1.0.0. Upgrading to v1.1.0 and saving settings again preserves all profiles.
+A: This was a bug in v1.0.0. Upgrading to v1.2.0 and saving settings again preserves all profiles.
 
 **Q: What is the 0.2% developer fee?**
 A: Every 499 seconds, the launcher mines for ~1 second to the developer wallet to support continued development.
+
+**Q: How do I add multiple pools?**
+A: Go to **Settings > Pool**, click **Add pool** for each pool. Each pool can have a different algorithm and coin. The first enabled pool is used; failover switches to the next on connection loss.
+
+**Q: Why is EST. EARNINGS showing `— (RVN)` instead of a dollar amount?**
+A: Earnings estimates are only available for Monero (XMR / rx/* algorithms). For other coins like Ravencoin, Ethereum, or Ethereum Classic, the card displays the coin name instead.
+
+**Q: How does pool failover work?**
+A: If the connection drops twice or the miner crashes, the app automatically switches to the next enabled pool. A `[failover]` entry is written to the log. When all pools are exhausted, standard auto-restart applies.
+
+**Q: Can I see blocks found?**
+A: Yes — the **BLOCKS FOUND** card on the dashboard shows the count and flashes cyan when a new block is detected in the miner output.
