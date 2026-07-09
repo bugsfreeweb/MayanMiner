@@ -153,3 +153,11 @@ class MiningStatsTracker:
             if value >= factor:
                 return f"{value / factor:.2f} {unit}"
         return f"{value:.1f} H/s"
+
+    @staticmethod
+    def estimate_xmr_per_day(hashrate_hs: float) -> float:
+        return hashrate_hs * 1.44e-7
+
+    @staticmethod
+    def estimate_usd_per_day(hashrate_hs: float, xmr_price_usd: float) -> float:
+        return MiningStatsTracker.estimate_xmr_per_day(hashrate_hs) * xmr_price_usd

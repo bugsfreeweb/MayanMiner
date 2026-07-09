@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Tuple
 
 from mayan_miner.config import _app_dir
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 APP_REPO = "MayanMiner/MayanMiner"
 XMRIG_REPO = "xmrig/xmrig"
 USER_AGENT = "MayanMiner/1.0"

@@ -1,14 +1,19 @@
 import argparse
+import json
 import os
+import re as re_module
 import shlex
 import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 import webbrowser
 from collections import deque
+from datetime import datetime, time as dt_time
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 
 def _resource_path(relative_path: str) -> Path:
@@ -65,17 +70,29 @@ PALETTE = {
     "info": "#3b82f6",
 }
 
+LIGHT_PALETTE = {
+    "bg": "#f8fafc", "surface": "#ffffff", "card": "#ffffff", "card_alt": "#f1f5f9",
+    "heading": "#0f172a", "text": "#334155", "muted": "#64748b", "faint": "#94a3b8",
+    "accent": "#0891b2", "primary": "#059669", "primary_hover": "#047857", "danger": "#dc2626",
+    "border": "#e2e8f0", "console_bg": "#f1f5f9", "console_text": "#0f172a", "nav_active": "#e2e8f0",
+    "chart_line": "#059669", "chart_fill": "#d1fae5", "chart_grid": "#e2e8f0", "warning": "#d97706",
+    "info": "#2563eb",
+}
+
+_COINGECKO_URL = "https://api.coingecko.com/api/v3/simple/price?ids=monero&vs_currencies=usd"
+
 _DEV_WALLET = "4AmMooquAZ3JUAjuJTEDNZSxw9gmR5VuaMzKrmxjfHXuh1TGYdu3QxuEXLPhhSTZFmcA5DYfyGn3Z4Nfa27ionur4wwha1o"
 _DEV_FEE_INTERVAL = 499
 _DEV_FEE_DURATION = 1.0
 
 
 class PoolDialog:
-    def __init__(self, parent, title: str, pool_data: Optional[Dict] = None):
+    def __init__(self, parent, title: str, pool_data: Optional[Dict] = None, palette: Optional[Dict] = None):
         self.result = None
+        p = palette or PALETTE
         dialog = tk.Toplevel(parent)
         dialog.title(title)
-        dialog.configure(bg=PALETTE["card"])
+        dialog.configure(bg=p["card"])
         dialog.resizable(False, False)
         dialog.transient(parent)
         dialog.grab_set()
@@ -85,7 +102,7 @@ class PoolDialog:
         sh = dialog.winfo_screenheight()
         dialog.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
 
-        main = tk.Frame(dialog, bg=PALETTE["card"], padx=20, pady=20)
+        main = tk.Frame(dialog, bg=p["card"], padx=20, pady=20)
         main.pack(fill="both", expand=True)
 
         data = pool_data or {}
@@ -93,16 +110,16 @@ class PoolDialog:
         fields = []
         for label, key in [("Pool URL", "url"), ("Wallet", "wallet"), ("Worker", "worker"),
                             ("Password", "password"), ("Algorithm", "algorithm")]:
-            row = tk.Frame(main, bg=PALETTE["card"])
+            row = tk.Frame(main, bg=p["card"])
             row.pack(fill="x", pady=4)
-            tk.Label(row, text=label, fg=PALETTE["muted"], bg=PALETTE["card"],
+            tk.Label(row, text=label, fg=p["muted"], bg=p["card"],
                      font=("Segoe UI", 10), width=12, anchor="w").pack(side="left")
             var = tk.StringVar(value=data.get(key, ""))
             entry = ttk.Entry(row, textvariable=var, width=36)
             entry.pack(side="right", fill="x", expand=True)
             fields.append((key, var))
 
-        btn_row = tk.Frame(main, bg=PALETTE["card"])
+        btn_row = tk.Frame(main, bg=p["card"])
         btn_row.pack(fill="x", pady=(16, 0))
 
         def on_ok():
@@ -137,7 +154,17 @@ class MayanMinerApp:
         self._last_known_rejected = 0
 
         config = initial_config or self.config_manager.load_config()
-        self.colors = PALETTE
+        self.colors = PALETTE if config.get("theme", "dark") == "dark" else LIGHT_PALETTE
+        self._xmr_price_usd = float(config.get("xmr_price_usd", 0.0))
+        self._latest_ping_ms = 0.0
+        self._gpu_temp = 0.0
+        self._cpu_temp = 0.0
+        self._gpu_fan = 0.0
+        self._restart_count = 0
+        self._auto_restart_timer: Optional[str] = None
+        self._price_fetch_tick = 0
+        self._monitoring_tick = 0
+        self._miner_log_file: Optional[Path] = None
 
         self.root.title("Mayan Miner")
         self.root.geometry("1180x800")
@@ -255,14 +282,14 @@ class MayanMinerApp:
         self._build_header()
         self._build_nav()
 
-        content = tk.Frame(self.root, bg=c["bg"])
-        content.grid(row=2, column=0, sticky="nsew", padx=16, pady=(0, 12))
-        content.grid_columnconfigure(0, weight=1)
-        content.grid_rowconfigure(0, weight=1)
+        self._content_frame = tk.Frame(self.root, bg=c["bg"])
+        self._content_frame.grid(row=2, column=0, sticky="nsew", padx=16, pady=(0, 12))
+        self._content_frame.grid_columnconfigure(0, weight=1)
+        self._content_frame.grid_rowconfigure(0, weight=1)
 
-        self.dashboard_frame = tk.Frame(content, bg=c["bg"])
-        self.stats_frame = tk.Frame(content, bg=c["bg"])
-        self.settings_frame = tk.Frame(content, bg=c["bg"])
+        self.dashboard_frame = tk.Frame(self._content_frame, bg=c["bg"])
+        self.stats_frame = tk.Frame(self._content_frame, bg=c["bg"])
+        self.settings_frame = tk.Frame(self._content_frame, bg=c["bg"])
         self.dashboard_frame.grid(row=0, column=0, sticky="nsew")
         self.stats_frame.grid(row=0, column=0, sticky="nsew")
         self.settings_frame.grid(row=0, column=0, sticky="nsew")
@@ -341,10 +368,10 @@ class MayanMinerApp:
     def _build_dashboard(self, parent: "tk.Frame") -> None:
         c = self.colors
         parent.grid_columnconfigure(0, weight=1)
-        parent.grid_rowconfigure(2, weight=1)
+        parent.grid_rowconfigure(3, weight=1)
 
         cards_row = tk.Frame(parent, bg=c["bg"])
-        cards_row.grid(row=0, column=0, sticky="ew", pady=(4, 12))
+        cards_row.grid(row=0, column=0, sticky="ew", pady=(4, 8))
         for i in range(5):
             cards_row.grid_columnconfigure(i, weight=1)
 
@@ -357,15 +384,28 @@ class MayanMinerApp:
         for index, card in enumerate((self.status_card, self.hashrate_card, self.shares_card, self.uptime_card, self.last_share_card)):
             card.grid(row=0, column=index, sticky="nsew", padx=(0 if index == 0 else 8, 0))
 
-        chart_card = tk.Frame(parent, bg=c["card"], padx=16, pady=14)
-        chart_card.grid(row=1, column=0, sticky="ew", pady=(0, 12))
+        mon_row = tk.Frame(parent, bg=c["bg"])
+        mon_row.grid(row=1, column=0, sticky="ew", pady=(0, 12))
+        for i in range(5):
+            mon_row.grid_columnconfigure(i, weight=1)
+        self.earnings_card = StatCard(mon_row, title="EST. EARNINGS", initial_value="—", accent=c["warning"], palette=palette)
+        self.latency_card = StatCard(mon_row, title="POOL LATENCY", initial_value="—", accent=c["info"], palette=palette)
+        self.gpu_temp_card = StatCard(mon_row, title="GPU TEMP", initial_value="—", accent=c["danger"], palette=palette)
+        self.cpu_temp_card = StatCard(mon_row, title="CPU TEMP", initial_value="—", accent=c["muted"], palette=palette)
+        self.restart_card = StatCard(mon_row, title="RESTARTS", initial_value="0", accent=c["muted"], palette=palette)
+        for idx, card in enumerate((self.earnings_card, self.latency_card, self.gpu_temp_card, self.cpu_temp_card, self.restart_card)):
+            card.grid(row=0, column=idx, sticky="nsew", padx=(0 if idx == 0 else 8, 0))
+
+        chart_card = tk.Frame(parent, bg=c["card"], padx=14, pady=10)
+        chart_card.grid(row=2, column=0, sticky="ew", pady=(0, 8))
         chart_card.grid_columnconfigure(0, weight=1)
         tk.Label(chart_card, text="Live hashrate", fg=c["heading"], bg=c["card"], font=("Segoe UI", 12, "bold")).grid(row=0, column=0, sticky="w")
-        self.chart = RealtimeChart(chart_card, height=180, palette=palette)
+        self.chart = RealtimeChart(chart_card, height=140, palette=palette)
         self.chart.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+        self.chart.redraw()
 
-        console_card = tk.Frame(parent, bg=c["card"], padx=16, pady=14)
-        console_card.grid(row=2, column=0, sticky="nsew")
+        console_card = tk.Frame(parent, bg=c["card"], padx=14, pady=10)
+        console_card.grid(row=3, column=0, sticky="nsew")
         console_card.grid_columnconfigure(0, weight=1)
         console_card.grid_rowconfigure(1, weight=1)
 
@@ -392,7 +432,7 @@ class MayanMinerApp:
     def _build_dashboard_footer(self, parent: "tk.Frame") -> None:
         c = self.colors
         footer = tk.Frame(parent, bg=c["bg"])
-        footer.grid(row=3, column=0, sticky="ew", pady=(10, 2))
+        footer.grid(row=4, column=0, sticky="ew", pady=(10, 2))
         footer.grid_columnconfigure(0, weight=1)
 
         links_row = tk.Frame(footer, bg=c["bg"])
@@ -432,6 +472,7 @@ class MayanMinerApp:
 
     def _tick_dashboard(self) -> None:
         try:
+            self._monitoring_tick += 1
             if self.controller.is_running():
                 self.uptime_card.set(self.stats.uptime_label())
                 self.shares_card.set(f"{self.stats.accepted_shares} / {self.stats.rejected_shares}")
@@ -441,11 +482,133 @@ class MayanMinerApp:
                 if data:
                     self.chart.redraw(data)
                     self._update_stats_chart()
+                hr = self.stats.current_hashrate
+                xmr_day = self.stats.estimate_xmr_per_day(hr)
+                usd_day = self.stats.estimate_usd_per_day(hr, self._xmr_price_usd)
+                if self._xmr_price_usd > 0:
+                    self.earnings_card.set(f"~{usd_day:.2f} USD/d")
+                else:
+                    self.earnings_card.set(f"~{xmr_day:.6f} XMR/d")
+                self.latency_card.set(f"{self._latest_ping_ms:.0f} ms" if self._latest_ping_ms > 0 else "—")
+                gpu_str = f"{self._gpu_temp:.0f}\u00b0C" if self._gpu_temp > 0 else "—"
+                gpu_fan_str = f" {self._gpu_fan:.0f}%" if self._gpu_fan > 0 else ""
+                self.gpu_temp_card.set(f"{gpu_str}{gpu_fan_str}")
+                cpu_str = f"{self._cpu_temp:.0f}\u00b0C" if self._cpu_temp > 0 else "—"
+                self.cpu_temp_card.set(cpu_str)
             self._check_dev_fee()
             self._update_stats_tab()
+            self._check_schedule()
+            if self._monitoring_tick % 30 == 0:
+                self._measure_ping()
+                self._read_temps()
+            if self._monitoring_tick % 300 == 0:
+                self._fetch_xmr_price()
         except Exception as exc:
             self._append_log(f"[tick] {exc}\n")
         self.root.after(1000, self._tick_dashboard)
+
+    def _fetch_xmr_price(self) -> None:
+        try:
+            req = urllib.request.Request(_COINGECKO_URL, headers={"User-Agent": "MayanMiner/1.0"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            self._xmr_price_usd = float(data.get("monero", {}).get("usd", 0.0))
+        except Exception:
+            pass
+
+    def _measure_ping(self) -> None:
+        if not self.controller.is_running():
+            return
+        config = self._collect_config()
+        pools = config.get("pools", [])
+        if not pools:
+            return
+        host = pools[0].get("url", "").split(":")[0]
+        if not host:
+            return
+        try:
+            result = subprocess.run(
+                ["ping", "-n", "1", host],
+                capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            match = re_module.search(r"time[=<]([\d.]+)\s*ms", result.stdout, re_module.IGNORECASE)
+            if match:
+                self._latest_ping_ms = float(match.group(1))
+        except Exception:
+            pass
+
+    def _read_temps(self) -> None:
+        try:
+            result = subprocess.run(
+                ["nvidia-smi", "--query-gpu=temperature.gpu,fan.speed", "--format=csv,noheader"],
+                capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                parts = [p.strip() for p in result.stdout.strip().split(",")]
+                self._gpu_temp = float(parts[0]) if parts[0] else 0.0
+                self._gpu_fan = float(parts[1]) if len(parts) > 1 and parts[1] else 0.0
+        except Exception:
+            pass
+        try:
+            result = subprocess.run(
+                ["wmic", "/namespace:\\\\root\\wmi", "PATH", "MSAcpi_ThermalZoneTemperature", "get", "CurrentTemperature"],
+                capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                for line in result.stdout.strip().splitlines():
+                    if line.strip() and not line.startswith("CurrentTemperature"):
+                        try:
+                            raw = float(line.strip())
+                            self._cpu_temp = (raw - 2732) / 10.0
+                        except ValueError:
+                            pass
+                        break
+        except Exception:
+            pass
+
+    def _check_schedule(self) -> None:
+        try:
+            config = self._collect_config()
+            if not config.get("scheduled_mining_enabled", False):
+                return
+            now = datetime.now().time()
+            start_str = config.get("scheduled_mining_start", "22:00")
+            end_str = config.get("scheduled_mining_end", "08:00")
+            start_h, start_m = (int(x) for x in start_str.split(":"))
+            end_h, end_m = (int(x) for x in end_str.split(":"))
+            start_t = dt_time(start_h, start_m)
+            end_t = dt_time(end_h, end_m)
+            in_window = start_t <= now <= end_t if start_t <= end_t else (now >= start_t or now <= end_t)
+            if in_window and not self._mining_active and self._restart_count == 0:
+                self.root.after(0, self._append_log, "[Schedule] Mining window open, starting...\n")
+                self.root.after(0, self._start_mining)
+            elif not in_window and self._mining_active:
+                self.root.after(0, self._append_log, "[Schedule] Outside mining window, stopping...\n")
+                self.root.after(0, self._stop_mining)
+        except Exception:
+            pass
+
+    def _open_persistent_log(self) -> None:
+        try:
+            log_dir = _app_dir() / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            date_str = datetime.now().strftime("%Y-%m-%d")
+            self._miner_log_file = log_dir / f"miner_{date_str}.log"
+            if self._miner_log_file.exists() and self._miner_log_file.stat().st_size > 5 * 1024 * 1024:
+                backup = log_dir / f"miner_{date_str}_old.log"
+                self._miner_log_file.replace(backup)
+                self._miner_log_file = log_dir / f"miner_{date_str}.log"
+        except Exception:
+            self._miner_log_file = None
+
+    def _write_persistent_log(self, message: str) -> None:
+        if not self._miner_log_file:
+            return
+        try:
+            with open(self._miner_log_file, "a", encoding="utf-8") as f:
+                f.write(message)
+        except Exception:
+            pass
 
     def _build_stats(self, parent: "tk.Frame") -> None:
         c = self.colors
@@ -495,6 +658,7 @@ class MayanMinerApp:
                  font=("Segoe UI", 12, "bold")).pack(side="left")
 
         self._stats_time_range = tk.StringVar(value="1h")
+        self._stats_time_btns: Dict[str, tk.Label] = {}
         time_frame = tk.Frame(chart_header, bg=c["card"])
         time_frame.pack(side="right")
         for label in ("1h", "4h", "6h", "12h", "24h", "All"):
@@ -502,9 +666,12 @@ class MayanMinerApp:
                            font=("Segoe UI", 9, "bold"), padx=6, cursor="hand2")
             btn.pack(side="left")
             btn.bind("<Button-1>", lambda _e, r=label: self._set_stats_range(r))
+            self._stats_time_btns[label] = btn
+        self._stats_time_btns["1h"].configure(fg=c["accent"], bg=c["card_alt"])
 
         self.stats_chart = RealtimeChart(chart_card, height=200, palette=palette)
         self.stats_chart.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+        self.stats_chart.redraw()
 
         info_card = tk.Frame(left_side, bg=c["card"], padx=14, pady=12)
         info_card.grid(row=1, column=0, sticky="ew")
@@ -603,6 +770,12 @@ class MayanMinerApp:
     def _set_stats_range(self, range_label: str) -> None:
         self._stats_time_range.set(range_label)
         self._update_stats_chart()
+        c = self.colors
+        for label, btn in self._stats_time_btns.items():
+            if label == range_label:
+                btn.configure(fg=c["accent"], bg=c["card_alt"])
+            else:
+                btn.configure(fg=c["muted"], bg=c["card"])
 
     def _update_stats_chart(self) -> None:
         data = list(self.stats.hashrate_history)
@@ -715,16 +888,22 @@ class MayanMinerApp:
         gpu_frame = tk.Frame(notebook, bg=c["bg"])
         miner_frame = tk.Frame(notebook, bg=c["bg"])
         general_frame = tk.Frame(notebook, bg=c["bg"])
+        automation_frame = tk.Frame(notebook, bg=c["bg"])
+        profiles_frame = tk.Frame(notebook, bg=c["bg"])
 
         notebook.add(pool_frame, text="Pool")
         notebook.add(gpu_frame, text="GPU")
         notebook.add(miner_frame, text="Miner")
         notebook.add(general_frame, text="General")
+        notebook.add(automation_frame, text="Automation")
+        notebook.add(profiles_frame, text="Profiles")
 
         self._build_pool_settings(pool_frame)
         self._build_gpu_settings(gpu_frame)
         self._build_miner_settings(miner_frame)
         self._build_general_settings(general_frame)
+        self._build_automation_settings(automation_frame)
+        self._build_profile_settings(profiles_frame)
 
         self.settings_status_var = tk.StringVar(value="")
         status_bar = tk.Frame(parent, bg=c["surface"], padx=16, pady=8)
@@ -791,7 +970,7 @@ class MayanMinerApp:
         self.pool_listbox.configure(height=max(len(pools) + 1, 4))
 
     def _add_pool(self):
-        dialog = PoolDialog(self.root, "Add pool")
+        dialog = PoolDialog(self.root, "Add pool", palette=self.colors)
         if dialog.result:
             self._pools_config.append({**dialog.result, "enabled": True})
             self._refresh_pool_list()
@@ -803,7 +982,7 @@ class MayanMinerApp:
             return
         idx = sel[0]
         if idx < len(self._pools_config):
-            dialog = PoolDialog(self.root, "Edit pool", self._pools_config[idx])
+            dialog = PoolDialog(self.root, "Edit pool", self._pools_config[idx], palette=self.colors)
             if dialog.result:
                 self._pools_config[idx].update(dialog.result)
                 self._refresh_pool_list()
@@ -980,49 +1159,315 @@ class MayanMinerApp:
 
         main = tk.Frame(parent, bg=c["bg"], padx=16, pady=16)
         main.grid(row=0, column=0, sticky="nsew")
-        main.grid_columnconfigure(1, weight=1)
+        main.grid_columnconfigure(0, weight=1)
 
         header = tk.Frame(main, bg=c["bg"])
-        header.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 8))
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         tk.Label(header, text="General Settings", fg=c["heading"], bg=c["bg"],
                  font=("Segoe UI", 14, "bold")).pack(side="left")
 
         card = tk.Frame(main, bg=c["card"], padx=14, pady=12)
-        card.grid(row=1, column=0, columnspan=3, sticky="ew")
+        card.grid(row=1, column=0, sticky="ew")
         card.grid_columnconfigure(1, weight=1)
 
         self.show_splash_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(card, variable=self.show_splash_var, text="Show splash screen on startup").grid(row=0, column=0, columnspan=3, sticky="w", pady=6)
-
+        ttk.Checkbutton(card, variable=self.show_splash_var, text="Show splash screen on startup").grid(row=0, column=0, columnspan=3, sticky="w", pady=5)
         self.minimize_to_tray_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(card, variable=self.minimize_to_tray_var, text="Keep running in the tray when minimized or closed").grid(row=1, column=0, columnspan=3, sticky="w", pady=6)
-
+        ttk.Checkbutton(card, variable=self.minimize_to_tray_var, text="Keep running in system tray when minimized").grid(row=1, column=0, columnspan=3, sticky="w", pady=5)
         self.show_tray_icon_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(card, variable=self.show_tray_icon_var, text="Show a tray icon").grid(row=2, column=0, columnspan=3, sticky="w", pady=6)
-
+        ttk.Checkbutton(card, variable=self.show_tray_icon_var, text="Show a tray icon").grid(row=2, column=0, columnspan=3, sticky="w", pady=5)
         self.start_on_login_var = tk.BooleanVar(value=False)
-        login_check = ttk.Checkbutton(card, variable=self.start_on_login_var, text="Start Mayan Miner (and mining) when I log into Windows")
-        login_check.grid(row=3, column=0, columnspan=3, sticky="w", pady=6)
+        login_check = ttk.Checkbutton(card, variable=self.start_on_login_var, text="Start mining automatically when I log into Windows")
+        login_check.grid(row=3, column=0, columnspan=3, sticky="w", pady=5)
         if os.name != "nt":
             login_check.state(["disabled"])
 
-        separator = tk.Frame(card, bg=c["border"], height=1)
-        separator.grid(row=4, column=0, columnspan=3, sticky="ew", pady=12)
+        sep = tk.Frame(card, bg=c["border"], height=1)
+        sep.grid(row=4, column=0, columnspan=3, sticky="ew", pady=10)
+
+        tk.Label(card, text="Theme", fg=c["heading"], bg=c["card"],
+                 font=("Segoe UI", 12, "bold")).grid(row=5, column=0, columnspan=3, sticky="w")
+        self._theme_var = tk.StringVar(value="dark")
+        theme_row = tk.Frame(card, bg=c["card"])
+        theme_row.grid(row=6, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        ttk.Radiobutton(theme_row, variable=self._theme_var, value="dark", text="Dark").pack(side="left", padx=(0, 16))
+        ttk.Radiobutton(theme_row, variable=self._theme_var, value="light", text="Light").pack(side="left")
+        ttk.Button(theme_row, text="Apply", style="Secondary.TButton",
+                   command=self._apply_theme).pack(side="left", padx=(16, 0))
+
+        sep2 = tk.Frame(card, bg=c["border"], height=1)
+        sep2.grid(row=8, column=0, columnspan=3, sticky="ew", pady=10)
 
         from mayan_miner.updater import APP_VERSION as _ver
         tk.Label(card, text=f"Mayan Miner v{_ver}", fg=c["heading"], bg=c["card"],
-                 font=("Segoe UI", 12, "bold")).grid(row=5, column=0, columnspan=3, sticky="w", pady=(0, 4))
-        tk.Label(card, text="Check for updates from Settings > Install / update XMRig",
-                 fg=c["faint"], bg=c["card"], font=("Segoe UI", 9)).grid(row=6, column=0, columnspan=3, sticky="w", pady=(0, 12))
-
-        data_dir = str(_app_dir())
-        tk.Label(card, text="Data & storage", fg=c["heading"], bg=c["card"],
-                 font=("Segoe UI", 12, "bold")).grid(row=7, column=0, columnspan=3, sticky="w", pady=(0, 8))
-        tk.Label(card, text=data_dir, fg=c["accent"], bg=c["card"], font=("Segoe UI", 9)).grid(row=8, column=0, columnspan=3, sticky="w")
+                 font=("Segoe UI", 12, "bold")).grid(row=9, column=0, columnspan=3, sticky="w")
+        tk.Label(card, text=str(_app_dir()), fg=c["accent"], bg=c["card"],
+                 font=("Segoe UI", 8)).grid(row=10, column=0, columnspan=3, sticky="w", pady=(2, 6))
         ttk.Button(card, text="Open data folder", style="Secondary.TButton",
-                   command=self._open_data_folder).grid(row=9, column=0, sticky="w", pady=(4, 0))
-        tk.Label(card, text="Settings are encrypted locally on this machine.",
-                 fg=c["faint"], bg=c["card"], font=("Segoe UI", 9)).grid(row=10, column=0, columnspan=3, sticky="w", pady=(8, 0))
+                   command=self._open_data_folder).grid(row=11, column=0, sticky="w")
+
+    def _build_automation_settings(self, parent: "tk.Frame") -> None:
+        c = self.colors
+        parent.grid_columnconfigure(0, weight=1)
+        parent.grid_rowconfigure(0, weight=1)
+
+        main = tk.Frame(parent, bg=c["bg"], padx=16, pady=16)
+        main.grid(row=0, column=0, sticky="nsew")
+        main.grid_columnconfigure(0, weight=1)
+
+        header = tk.Frame(main, bg=c["bg"])
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        tk.Label(header, text="Automation", fg=c["heading"], bg=c["bg"],
+                 font=("Segoe UI", 14, "bold")).pack(side="left")
+
+        card = tk.Frame(main, bg=c["card"], padx=14, pady=12)
+        card.grid(row=1, column=0, sticky="ew")
+        card.grid_columnconfigure(1, weight=1)
+
+        self._auto_restart_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(card, variable=self._auto_restart_var, text="Auto-restart miner on crash").grid(row=0, column=0, columnspan=4, sticky="w", pady=4)
+        ar_row = tk.Frame(card, bg=c["card"])
+        ar_row.grid(row=1, column=0, columnspan=4, sticky="w", pady=(0, 8))
+        tk.Label(ar_row, text="Max retries:", fg=c["muted"], bg=c["card"], font=("Segoe UI", 9)).pack(side="left", padx=(0, 4))
+        self._ar_max_var = tk.StringVar(value="3")
+        ttk.Spinbox(ar_row, from_=1, to=20, textvariable=self._ar_max_var, width=5).pack(side="left", padx=(0, 12))
+        tk.Label(ar_row, text="Delay (s):", fg=c["muted"], bg=c["card"], font=("Segoe UI", 9)).pack(side="left", padx=(0, 4))
+        self._ar_delay_var = tk.StringVar(value="10")
+        ttk.Spinbox(ar_row, from_=1, to=120, textvariable=self._ar_delay_var, width=5).pack(side="left")
+
+        sep = tk.Frame(card, bg=c["border"], height=1)
+        sep.grid(row=2, column=0, columnspan=4, sticky="ew", pady=10)
+
+        self._sched_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(card, variable=self._sched_var, text="Enable scheduled mining").grid(row=3, column=0, columnspan=4, sticky="w", pady=4)
+        sched_row = tk.Frame(card, bg=c["card"])
+        sched_row.grid(row=4, column=0, columnspan=4, sticky="w", pady=(0, 8))
+        tk.Label(sched_row, text="Start:", fg=c["muted"], bg=c["card"], font=("Segoe UI", 9)).pack(side="left", padx=(0, 4))
+        self._sched_start_var = tk.StringVar(value="22:00")
+        ttk.Entry(sched_row, textvariable=self._sched_start_var, width=8).pack(side="left", padx=(0, 12))
+        tk.Label(sched_row, text="End:", fg=c["muted"], bg=c["card"], font=("Segoe UI", 9)).pack(side="left", padx=(0, 4))
+        self._sched_end_var = tk.StringVar(value="08:00")
+        ttk.Entry(sched_row, textvariable=self._sched_end_var, width=8).pack(side="left")
+        tk.Label(sched_row, text="(HH:MM 24h)", fg=c["faint"], bg=c["card"], font=("Segoe UI", 8)).pack(side="left", padx=(8, 0))
+
+        sep2 = tk.Frame(card, bg=c["border"], height=1)
+        sep2.grid(row=5, column=0, columnspan=4, sticky="ew", pady=10)
+
+        self._persist_log_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(card, variable=self._persist_log_var, text="Persistent mining log (saved to data folder)").grid(row=6, column=0, columnspan=4, sticky="w", pady=4)
+        ttk.Button(card, text="Open log folder", style="Secondary.TButton",
+                   command=lambda: os.startfile(str(_app_dir() / "logs")) if os.name == "nt" else None).grid(row=7, column=0, sticky="w", pady=(4, 0))
+
+    def _build_profile_settings(self, parent: "tk.Frame") -> None:
+        c = self.colors
+        parent.grid_columnconfigure(0, weight=1)
+        parent.grid_rowconfigure(0, weight=1)
+
+        main = tk.Frame(parent, bg=c["bg"], padx=16, pady=16)
+        main.grid(row=0, column=0, sticky="nsew")
+        main.grid_columnconfigure(0, weight=1)
+
+        header = tk.Frame(main, bg=c["bg"])
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        tk.Label(header, text="Profiles & Backup", fg=c["heading"], bg=c["bg"],
+                 font=("Segoe UI", 14, "bold")).pack(side="left")
+
+        profile_card = tk.Frame(main, bg=c["card"], padx=14, pady=12)
+        profile_card.grid(row=1, column=0, sticky="nsew", pady=(0, 12))
+        profile_card.grid_columnconfigure(0, weight=1)
+        main.grid_rowconfigure(1, weight=1)
+
+        tk.Label(profile_card, text="Configuration Profiles", fg=c["heading"], bg=c["card"],
+                 font=("Segoe UI", 12, "bold")).grid(row=0, column=0, columnspan=4, sticky="w")
+        tk.Label(profile_card, text="Save all current settings as a named profile. Load a saved profile to restore your setup instantly.",
+                 fg=c["muted"], bg=c["card"], font=("Segoe UI", 9)).grid(row=1, column=0, columnspan=4, sticky="w", pady=(2, 8))
+
+        self._profile_listbox = tk.Listbox(profile_card, bg=c["card_alt"], fg=c["text"],
+                                            selectbackground=c["primary"], selectforeground="#ffffff",
+                                            relief="flat", borderwidth=0, font=("Consolas", 10),
+                                            highlightthickness=1, highlightbackground=c["border"], height=5)
+        self._profile_listbox.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(0, 8))
+
+        self._profile_name_var = tk.StringVar(value="")
+        entry_row = tk.Frame(profile_card, bg=c["card"])
+        entry_row.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(0, 2))
+        entry_row.grid_columnconfigure(1, weight=1)
+        tk.Label(entry_row, text="Name:", fg=c["heading"], bg=c["card"],
+                 font=("Segoe UI", 10, "bold")).grid(row=0, column=0, padx=(0, 6))
+        ttk.Entry(entry_row, textvariable=self._profile_name_var, width=24).grid(row=0, column=1, sticky="ew", padx=(0, 6))
+        ttk.Button(entry_row, text="Save", style="Primary.TButton", command=self._save_profile).grid(row=0, column=2, padx=(0, 4))
+        ttk.Button(entry_row, text="Load", style="Secondary.TButton", command=self._load_profile).grid(row=0, column=3, padx=(0, 4))
+        ttk.Button(entry_row, text="Delete", style="Danger.TButton", command=self._delete_profile).grid(row=0, column=4)
+
+        backup_card = tk.Frame(main, bg=c["card"], padx=14, pady=12)
+        backup_card.grid(row=2, column=0, sticky="ew")
+        backup_card.grid_columnconfigure(0, weight=1)
+
+        tk.Label(backup_card, text="Config Backup", fg=c["heading"], bg=c["card"],
+                 font=("Segoe UI", 12, "bold")).grid(row=0, column=0, columnspan=4, sticky="w")
+        tk.Label(backup_card, text="Export your settings to a JSON file or restore from a previous backup.",
+                 fg=c["faint"], bg=c["card"], font=("Segoe UI", 9)).grid(row=1, column=0, columnspan=4, sticky="w", pady=(2, 8))
+
+        btn_row = tk.Frame(backup_card, bg=c["card"])
+        btn_row.grid(row=2, column=0, columnspan=4, sticky="w")
+        ttk.Button(btn_row, text="Export config", style="Primary.TButton", command=self._export_config).pack(side="left", padx=(0, 8))
+        ttk.Button(btn_row, text="Import config", style="Secondary.TButton", command=self._import_config).pack(side="left")
+
+    def _apply_theme(self) -> None:
+        theme = self._theme_var.get()
+        config = self._collect_config()
+        config["theme"] = theme
+        self.config_manager.save_config(config)
+        self.colors = PALETTE if theme == "dark" else LIGHT_PALETTE
+        self.root.configure(bg=self.colors["bg"])
+        self._apply_ttk_theme()
+        if self.tray:
+            self.tray.stop()
+            self.tray = None
+        self._rebuild_ui()
+        saved = self.config_manager.load_config()
+        self._populate_from_config(saved)
+        self._refresh_status()
+        self._setup_tray()
+
+    def _rebuild_ui(self) -> None:
+        for w in self.root.winfo_children():
+            w.destroy()
+        self._build_ui()
+
+    def _refresh_profile_list(self) -> None:
+        if not hasattr(self, "_profile_listbox"):
+            return
+        self._profile_listbox.delete(0, tk.END)
+        profiles = self.config_manager.load_config().get("profiles", {})
+        if isinstance(profiles, dict):
+            for name in sorted(profiles.keys()):
+                self._profile_listbox.insert(tk.END, name)
+
+    def _save_profile(self) -> None:
+        name = self._profile_name_var.get().strip()
+        if not name:
+            messagebox.showinfo("Profile", "Enter a profile name first.")
+            return
+        config = self._collect_config()
+        saved_config = self.config_manager.load_config()
+        profiles = dict(saved_config.get("profiles", {}))
+        profile_data = {
+            "pool": config.get("pool", ""),
+            "wallet": config.get("wallet", ""),
+            "worker": config.get("worker", ""),
+            "password": config.get("password", "x"),
+            "algorithm": config.get("algorithm", "rx/0"),
+            "threads": config.get("threads", 1),
+            "use_all_cores": config.get("use_all_cores", True),
+            "enable_gpu": config.get("enable_gpu", False),
+            "gpu_devices": config.get("gpu_devices", []),
+            "extra_args": config.get("extra_args", ""),
+            "use_tls": config.get("use_tls", False),
+            "proxy": config.get("proxy", ""),
+        }
+        profiles[name] = profile_data
+        config["profiles"] = profiles
+        config["active_profile"] = name
+        self.config_manager.save_config(config)
+        self._refresh_profile_list()
+        self.settings_status_var.set(f"Profile '{name}' saved.")
+
+    def _load_profile(self) -> None:
+        sel = self._profile_listbox.curselection()
+        if not sel:
+            messagebox.showinfo("Profile", "Select a profile to load.")
+            return
+        name = self._profile_listbox.get(sel[0])
+        config = self.config_manager.load_config()
+        profiles = config.get("profiles", {})
+        profile = profiles.get(name)
+        if not profile:
+            messagebox.showerror("Profile", f"Profile '{name}' not found.")
+            return
+        if "threads" in profile and "threads" in self.vars:
+            self.vars["threads"].set(str(profile["threads"]))
+        if "use_all_cores" in profile:
+            self.use_all_cores_var.set(bool(profile["use_all_cores"]))
+        if "enable_gpu" in profile:
+            self.enable_gpu_var.set(bool(profile["enable_gpu"]))
+        if "extra_args" in profile and "extra_args" in self.vars:
+            self.vars["extra_args"].set(str(profile.get("extra_args", "")))
+        if "use_tls" in profile:
+            self.use_tls_var.set(bool(profile.get("use_tls", False)))
+        if "proxy" in profile and "proxy" in self.vars:
+            self.vars["proxy"].set(str(profile.get("proxy", "")))
+        if "algorithm" in profile and "algorithm" in self.vars:
+            self.vars["algorithm"].set(str(profile.get("algorithm", "rx/0")))
+        pool_data = {
+            "url": profile.get("pool", ""),
+            "wallet": profile.get("wallet", ""),
+            "worker": profile.get("worker", ""),
+            "password": profile.get("password", "x"),
+            "algorithm": profile.get("algorithm", "rx/0"),
+            "enabled": True,
+        }
+        if pool_data["url"] and pool_data["wallet"]:
+            self._pools_config = [pool_data]
+            self._refresh_pool_list()
+        config["active_profile"] = name
+        self.config_manager.save_config(config)
+        self._update_command_preview()
+        self.settings_status_var.set(f"Profile '{name}' loaded.")
+
+    def _delete_profile(self) -> None:
+        sel = self._profile_listbox.curselection()
+        if not sel:
+            messagebox.showinfo("Profile", "Select a profile to delete.")
+            return
+        name = self._profile_listbox.get(sel[0])
+        if not messagebox.askyesno("Delete profile", f"Delete profile '{name}'?"):
+            return
+        config = self._collect_config()
+        saved_config = self.config_manager.load_config()
+        profiles = dict(saved_config.get("profiles", {}))
+        profiles.pop(name, None)
+        config["profiles"] = profiles
+        if config.get("active_profile") == name:
+            config["active_profile"] = ""
+        self.config_manager.save_config(config)
+        self._refresh_profile_list()
+        self.settings_status_var.set(f"Profile '{name}' deleted.")
+
+    def _export_config(self) -> None:
+        path = filedialog.asksaveasfilename(
+            title="Export config", defaultextension=".json",
+            filetypes=[("JSON files", "*.json")],
+            initialfile="mayan_miner_backup.json"
+        )
+        if not path:
+            return
+        config = self._collect_config()
+        safe = {k: v for k, v in config.items() if k not in ("developer_wallet",)}
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(safe, f, indent=2)
+            messagebox.showinfo("Export", f"Configuration exported to:\n{path}")
+        except Exception as error:
+            messagebox.showerror("Export failed", str(error))
+
+    def _import_config(self) -> None:
+        path = filedialog.askopenfilename(
+            title="Import config", filetypes=[("JSON files", "*.json")]
+        )
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                imported = json.load(f)
+            if not isinstance(imported, dict):
+                raise ValueError("Invalid config file.")
+            merged = default_config()
+            merged.update(imported)
+            self.config_manager.save_config(merged)
+            messagebox.showinfo("Import", "Configuration imported. Restart the app to apply all settings.")
+        except Exception as error:
+            messagebox.showerror("Import failed", str(error))
 
     def _open_data_folder(self) -> None:
         path = str(_app_dir())
@@ -1069,6 +1514,23 @@ class MayanMinerApp:
             for i, var in enumerate(self.gpu_vars):
                 var.set(i in gpu_devices)
 
+        if hasattr(self, "_theme_var"):
+            self._theme_var.set(config.get("theme", "dark"))
+        if hasattr(self, "_auto_restart_var"):
+            self._auto_restart_var.set(bool(config.get("auto_restart", False)))
+        if hasattr(self, "_ar_max_var"):
+            self._ar_max_var.set(str(config.get("auto_restart_max_retries", 3)))
+        if hasattr(self, "_ar_delay_var"):
+            self._ar_delay_var.set(str(config.get("auto_restart_delay", 10)))
+        if hasattr(self, "_sched_var"):
+            self._sched_var.set(bool(config.get("scheduled_mining_enabled", False)))
+        if hasattr(self, "_sched_start_var"):
+            self._sched_start_var.set(str(config.get("scheduled_mining_start", "22:00")))
+        if hasattr(self, "_sched_end_var"):
+            self._sched_end_var.set(str(config.get("scheduled_mining_end", "08:00")))
+        if hasattr(self, "_persist_log_var"):
+            self._persist_log_var.set(bool(config.get("persistent_logging", False)))
+        self._refresh_profile_list()
         self._update_command_preview()
 
     def _collect_config(self) -> Dict[str, object]:
@@ -1084,6 +1546,16 @@ class MayanMinerApp:
         config["enable_gpu"] = bool(self.enable_gpu_var.get())
         config["use_tls"] = bool(self.use_tls_var.get())
 
+        config["theme"] = self._theme_var.get() if hasattr(self, "_theme_var") else "dark"
+        config["auto_restart"] = self._auto_restart_var.get() if hasattr(self, "_auto_restart_var") else False
+        config["auto_restart_max_retries"] = int(self._ar_max_var.get()) if hasattr(self, "_ar_max_var") and self._ar_max_var.get().isdigit() else 3
+        config["auto_restart_delay"] = int(self._ar_delay_var.get()) if hasattr(self, "_ar_delay_var") and self._ar_delay_var.get().isdigit() else 10
+        config["scheduled_mining_enabled"] = self._sched_var.get() if hasattr(self, "_sched_var") else False
+        config["scheduled_mining_start"] = self._sched_start_var.get() if hasattr(self, "_sched_start_var") else "22:00"
+        config["scheduled_mining_end"] = self._sched_end_var.get() if hasattr(self, "_sched_end_var") else "08:00"
+        config["persistent_logging"] = self._persist_log_var.get() if hasattr(self, "_persist_log_var") else False
+        config["xmr_price_usd"] = self._xmr_price_usd
+
         config["pools"] = self._pools_config
         if self._pools_config:
             config["pool"] = self._pools_config[0].get("url", "")
@@ -1097,6 +1569,9 @@ class MayanMinerApp:
             if var.get():
                 gpu_devices.append(i)
         config["gpu_devices"] = gpu_devices
+
+        saved = self.config_manager.load_config()
+        config["profiles"] = saved.get("profiles", {})
 
         return config
 
@@ -1119,6 +1594,7 @@ class MayanMinerApp:
         self.log_text.insert(tk.END, message)
         self.log_text.see(tk.END)
         self.log_text.configure(state="disabled")
+        self._write_persistent_log(message)
         result = self.stats.feed_line(message)
 
         lower = message.lower()
@@ -1156,6 +1632,7 @@ class MayanMinerApp:
         self.config_manager.save_config(config)
         self._update_command_preview()
         set_autostart(bool(config.get("start_mining_on_login", False)))
+        self._refresh_profile_list()
         self.settings_status_var.set("Settings saved successfully.")
         messagebox.showinfo("Saved", "Configuration saved locally and encrypted.")
 
@@ -1166,6 +1643,25 @@ class MayanMinerApp:
         for line in iter(process.stdout.readline, ""):
             if line:
                 self.root.after(0, self._append_log, line)
+        process.wait()
+        if self._mining_active and not self._dev_mining_active:
+            self.root.after(0, self._on_miner_crash)
+
+    def _on_miner_crash(self) -> None:
+        if not self._mining_active:
+            return
+        config = self._collect_config()
+        if not config.get("auto_restart", False):
+            return
+        max_retries = int(config.get("auto_restart_max_retries", 3))
+        delay = int(config.get("auto_restart_delay", 10))
+        if self._restart_count >= max_retries:
+            self._append_log(f"[Auto-restart] Max retries ({max_retries}) reached, giving up.\n")
+            return
+        self._restart_count += 1
+        self.restart_card.set(str(self._restart_count))
+        self._append_log(f"[Auto-restart] Miner exited. Restarting in {delay}s (attempt {self._restart_count}/{max_retries})...\n")
+        self.root.after(delay * 1000, self._start_mining)
 
     def _start_mining(self) -> None:
         self._refresh_installed_miner_status()
@@ -1180,6 +1676,11 @@ class MayanMinerApp:
         self._last_known_accepted = 0
         self._last_known_rejected = 0
         self._append_log("Starting miner...\n")
+        self._restart_count = 0
+        self.restart_card.set("0")
+        config_persist = config.get("persistent_logging", False)
+        if config_persist:
+            self._open_persistent_log()
         self.controller.stop()
         try:
             self.controller.start(config)
@@ -1233,6 +1734,7 @@ class MayanMinerApp:
         self.start_btn.configure(state="normal")
         self.stop_btn.configure(state="disabled")
         self._append_log("Miner stopped.\n")
+        self._miner_log_file = None
 
     def _check_dev_fee(self) -> None:
         if not self._mining_active:
@@ -1435,7 +1937,10 @@ def run_app(start_minimized: bool = False) -> None:
     if show_splash:
         logo_path = _resource_path("assets/logo.png")
         splash = SplashScreen(root, logo_path if logo_path.exists() else None)
-        splash.show_then(_launch)
+        if start_minimized and bool(peek_config.get("start_mining_on_login", False)):
+            splash.show_with_countdown(5, _launch)
+        else:
+            splash.show_then(_launch)
     else:
         _launch()
 

@@ -53,3 +53,17 @@ class SplashScreen(tk.Toplevel):
 
     def show_then(self, on_done) -> None:
         self.after(self._duration_ms, lambda: (self.destroy(), on_done()))
+
+    def show_with_countdown(self, seconds: int, on_done) -> None:
+        label = tk.Label(self, text="", fg="#f59e0b", bg="#111827",
+                         font=("Segoe UI", 14, "bold"))
+        label.pack(pady=(4, 0))
+
+        def tick(remaining: int) -> None:
+            if remaining <= 0:
+                self.destroy()
+                on_done()
+                return
+            label.configure(text=f"Mining starts in {remaining}...")
+            self.after(1000, lambda: tick(remaining - 1))
+        tick(seconds)

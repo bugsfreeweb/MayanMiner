@@ -1,31 +1,37 @@
-# Mayan Miner
+# Mayan Miner v1.1.0
 
-Mayan Miner is an open-source, Windows-first CPU/GPU mining launcher with a polished desktop dashboard. It includes built-in XMRig installer support so users do not need to install a separate miner manually.
+Open-source Windows-first CPU/GPU mining launcher with a polished desktop dashboard, live monitoring, automation features, and built-in XMRig installer.
 
 ## Features
-- **Three-tab dashboard**: **Dashboard** (live status, hashrate graph, miner output), **Stats** (performance charts with time-range controls, share/recent-event feed, system info), and **Settings** (pool/wallet/miner/algorithm, TLS, proxy, GPU, general)
-- **Real-time hashrate graph** with 1h/4h/6h/12h/24h/All time-range buttons, plus at-a-glance stat cards (status, hashrate, accepted/rejected shares, uptime, last share)
-- **ShareFeed**: Animated column showing recent mining events with emoji indicators (smiling for accepted, sad for rejected)
+- **Dashboard**: 10 real-time stat cards (status, hashrate, shares, uptime, last share + earnings, latency, GPU/CPU temp, restarts), live hashrate chart, miner output console
+- **Stats**: Performance tab (hashrate chart with 1h/4h/6h/12h/24h/All time-range buttons, ShareFeed event column) and System tab (connection status, drops, uptime, worker, threads, peak hashrate)
+- **Settings** organized across 6 tabs: Pool (multi-pool failover), GPU (NVIDIA CUDA), Miner (algorithm, threads, TLS, proxy, custom template), General (splash, tray, login, theme), Automation (auto-restart, scheduled mining, persistent log), Profiles
+- **Live earnings estimate** via CoinGecko XMR/USD price feed
+- **Pool latency** measurement (ping)
+- **GPU/CPU temperature** monitoring
+- **Configuration Profiles** — save/load/delete named profiles for one-click setup switching
+- **Config export/import** to/from JSON for backup
+- **Dark/Light theme** toggle — applies immediately, no restart
+- **Auto-restart** on miner crash with configurable retries and delay
+- **Scheduled mining** — set start/end HH:MM window
+- **Persistent mining log** (auto-rotated, saved to data folder)
+- **Auto-start countdown** on splash screen
+- **Desktop shortcut** created on first launch
 - Parses miner output live — works with **XMRig**, **SRBMiner**, or any custom miner
-- **Built-in XMRig installation** and automatic miner updates with post-download verification
-- **TLS** and **proxy** support for pool connections
+- Built-in XMRig installation with automatic architecture detection and post-download verification
+- TLS and proxy support for pool connections
 - Fully custom algorithm names (type any algorithm your miner supports)
 - "Custom" miner kind with command template (`{executable} {pool} {wallet} {worker} {password} {algorithm} {threads} {extra_args}` placeholders)
-- Multi-pool failover support
-- GPU mining with NVIDIA CUDA support
-- **Dashboard**: real-time stat cards, live hashrate chart, miner output console with Start/Stop controls
-- **Stats**: Performance tab (hashrate chart with time ranges + ShareFeed event column) and System tab (connection status, drops, uptime, worker, threads, peak hashrate)
-- Toggleable dark-only palette with professional styling
-- Minimize/close to system tray (optional)
+- Toggle to tray on minimize/close (optional)
 - "Start with Windows and begin mining automatically" (optional)
 - Encrypted local configuration storage in `%APPDATA%\MayanMiner`
-- Built-in developer wallet with transparent 0.2% developer fee
+- Transparent 0.2% developer fee
 
 ## Default developer wallet
 - XMR: `4AmMooquAZ3JUAjuJTEDNZSxw9gmR5VuaMzKrmxjfHXuh1TGYdu3QxuEXLPhhSTZFmcA5DYfyGn3Z4Nfa27ionur4wwha1o`
-- Developer fee: 0.2%
+- Fee: 0.2%
 
-## Run locally
+## Quick start
 ```powershell
 python -m pip install -r requirements.txt
 python main.py
@@ -59,24 +65,20 @@ When a GitHub release is created, the release workflow will automatically:
 - publish both files as release assets
 
 ## Installation and uninstall
-1. Run the generated installer from `output\MayanMinerSetup.exe`.
-2. Follow the standard Windows installation wizard and choose the install location.
-3. The installer installs into `Program Files\Mayan Miner` by default and creates a Start menu shortcut
-   (and, optionally, a desktop shortcut).
-4. All app data (encrypted settings, encryption key, downloaded XMRig binary) lives in its own folder
-   at `%APPDATA%\MayanMiner` — separate from the program files, like other Windows apps.
-5. Uninstall using Windows Settings > Apps > Mayan Miner, or the uninstall shortcut in the Start menu.
-   You'll be asked whether to also delete the `%APPDATA%\MayanMiner` folder, or keep your settings for
-   next time.
+1. Run `output\MayanMinerSetup.exe`.
+2. Follow the standard Windows installation wizard.
+3. The installer installs into `Program Files\Mayan Miner` by default and creates a Start menu shortcut (and optionally a desktop shortcut).
+4. All app data (encrypted settings, encryption key, downloaded XMRig binary) lives in `%APPDATA%\MayanMiner` — separate from program files.
+5. Uninstall using Windows Settings > Apps > Mayan Miner, or the uninstall shortcut in the Start menu. You will be asked whether to also delete the `%APPDATA%\MayanMiner` folder.
 
 ## Repository layout
 - `main.py` — app launcher entry point
 - `mayan_miner/` — application package
-  - `app.py` — the Tk UI (dashboard + stats + settings tabs)
-  - `widgets.py` — the dependency-free live chart, stat-card, and ShareFeed widgets
+  - `app.py` — Tk UI (dashboard + stats + settings tabs)
+  - `widgets.py` — live chart, stat-card, and ShareFeed widgets
   - `stats.py` — parses live miner stdout into hashrate/shares history
-  - `splash.py` — the optional startup splash screen
-  - `tray.py` — system tray integration (optional `pystray` dependency)
+  - `splash.py` — optional startup splash screen
+  - `tray.py` — system tray integration
   - `autostart.py` — Windows "start on login" registry helper
   - `config.py`, `miner.py`, `updater.py` — settings, launch-command building, XMRig updater
 - `installer/` — installer script and build workflow
@@ -85,7 +87,7 @@ When a GitHub release is created, the release workflow will automatically:
 - `assets/` — icons and images
 
 ## Repository
-This project is intended for public GitHub hosting as [MayanMiner](https://github.com/bugsfreeweb/MayanMiner).
+https://github.com/bugsfreeweb/MayanMiner
 
 ## License
 MIT

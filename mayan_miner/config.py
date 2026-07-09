@@ -102,6 +102,17 @@ def default_config() -> Dict[str, Any]:
         "gpu_threads": 0,
         "developer_wallet": "4AmMooquAZ3JUAjuJTEDNZSxw9gmR5VuaMzKrmxjfHXuh1TGYdu3QxuEXLPhhSTZFmcA5DYfyGn3Z4Nfa27ionur4wwha1o",
         "developer_fee": "0.2",
+        "theme": "dark",
+        "profiles": {},
+        "active_profile": "",
+        "auto_restart": False,
+        "auto_restart_max_retries": 3,
+        "auto_restart_delay": 10,
+        "scheduled_mining_enabled": False,
+        "scheduled_mining_start": "22:00",
+        "scheduled_mining_end": "08:00",
+        "persistent_logging": False,
+        "xmr_price_usd": 0.0,
     }
 
 
