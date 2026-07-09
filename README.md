@@ -28,7 +28,7 @@ Open-source Windows-first CPU/GPU mining launcher with a polished desktop dashbo
 - Transparent 0.2% developer fee
 
 ## Default developer wallet
-- XMR: `4AmMooquAZ3JUAjuJTEDNZSxw9gmR5VuaMzKrmxjfHXuh1TGYdu3QxuEXLPhhSTZFmcA5DYfyGn3Z4Nfa27ionur4wwha1o`
+- XMR: `DEV_WALLET`
 - Fee: 0.2%
 
 ## Quick start
