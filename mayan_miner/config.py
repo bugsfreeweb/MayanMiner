@@ -3,46 +3,103 @@ import hashlib
 import json
 import os
 import platform
+import subprocess
+import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 try:
     from cryptography.fernet import Fernet
-except ImportError:  # pragma: no cover - optional dependency
+except ImportError:
     Fernet = None
 
 
+def detect_gpus() -> List[Dict[str, Any]]:
+    gpus = []
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,index,memory.total", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0:
+            for line in result.stdout.strip().splitlines():
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) >= 2:
+                    gpus.append({
+                        "index": int(parts[1]) if parts[1].isdigit() else len(gpus),
+                        "name": parts[0],
+                        "memory": parts[2] if len(parts) > 2 else "Unknown",
+                        "type": "NVIDIA",
+                    })
+    except (FileNotFoundError, subprocess.TimeoutExpired, ValueError):
+        pass
+
+    if not gpus:
+        try:
+            result = subprocess.run(
+                ["wmic", "path", "win32_VideoController", "get", "name,adapterram"],
+                capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            if result.returncode == 0:
+                for i, line in enumerate(result.stdout.strip().splitlines()):
+                    if i == 0 or not line.strip():
+                        continue
+                    parts = [p.strip() for p in line.split("  ") if p.strip()]
+                    if parts:
+                        gpus.append({
+                            "index": i - 1,
+                            "name": parts[0],
+                            "memory": parts[1] if len(parts) > 1 else "Unknown",
+                            "type": "Unknown",
+                        })
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+    return gpus
+
+
 def default_config() -> Dict[str, Any]:
+    cpu_count = max(1, os.cpu_count() or 1)
     return {
-        # New UI and application settings
         "start_mining_on_login": False,
         "minimize_to_tray": False,
         "show_tray_icon": True,
-        "show_splashscreen_next": True, # For animated splash screen
-        "theme": "system", # Options: "light", "dark", "system"
-        "graph_history_points": 90, # Rolling window size for the live hashrate graph
-        "miner_settings_path": str(_app_dir() / "miner_settings.json"), # Specific place for settings file
-        # Custom algorithm options
+        "show_splashscreen_next": True,
+        "graph_history_points": 90,
+        "miner_settings_path": str(_app_dir() / "miner_settings.json"),
         "custom_algo_options": {},
         "known_algorithms": [
-            "rx/0", "cn/0", "cn/1", "cn/2", "cn-heavy/0", "cn/r",
-            "etchash", "kawpow", "sha256", "argon2/chukwa",
-        ], # Example known algos - the algorithm field also accepts any custom text
-        "pool": "mine.example.com:3333",
+            "rx/0", "rx/1", "rx/wow", "rx/arq", "rx/graft",
+            "cn/0", "cn/1", "cn/2", "cn-heavy/0", "cn-heavy/xhv",
+            "cn/r", "cn/fast", "cn/ccx",
+            "kawpow", "etchash", "sha256", "argon2/chukwa",
+        ],
+        "pools": [
+            {
+                "url": "pool.supportxmr.com:3333",
+                "wallet": "YOUR_WALLET",
+                "worker": "worker",
+                "password": "x",
+                "algorithm": "rx/0",
+                "enabled": True,
+            }
+        ],
+        "pool": "pool.supportxmr.com:3333",
         "wallet": "YOUR_WALLET",
-        "worker": "mayan-cpu",
+        "worker": "worker",
         "password": "x",
         "algorithm": "rx/0",
-        "threads": max(1, os.cpu_count() or 1),
+        "threads": cpu_count,
         "use_all_cores": True,
         "miner_executable": "",
         "miner_kind": "xmrig",
         "extra_args": "",
-        # Used only when miner_kind == "custom". Lets the app drive ANY third-party
-        # miner binary with its own CLI syntax. Supports {executable}, {pool},
-        # {wallet}, {worker}, {password}, {algorithm}, {threads}, {extra_args}
-        # placeholders. Leave blank to fall back to "<executable> <extra_args>".
         "custom_command_template": "",
+        "use_tls": False,
+        "proxy": "",
+        "enable_gpu": False,
+        "gpu_devices": [],
+        "gpu_threads": 0,
         "developer_wallet": "4AmMooquAZ3JUAjuJTEDNZSxw9gmR5VuaMzKrmxjfHXuh1TGYdu3QxuEXLPhhSTZFmcA5DYfyGn3Z4Nfa27ionur4wwha1o",
         "developer_fee": "0.2",
     }
@@ -96,6 +153,17 @@ class SecureConfigManager:
             loaded = {}
         merged = default_config()
         merged.update(loaded)
+        if not merged.get("pools") or not isinstance(merged.get("pools"), list):
+            merged["pools"] = [
+                {
+                    "url": loaded.get("pool", "pool.supportxmr.com:3333"),
+                    "wallet": loaded.get("wallet", "YOUR_WALLET"),
+                    "worker": loaded.get("worker", "worker"),
+                    "password": loaded.get("password", "x"),
+                    "algorithm": loaded.get("algorithm", "rx/0"),
+                    "enabled": True,
+                }
+            ]
         return merged
 
 

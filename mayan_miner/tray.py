@@ -1,10 +1,3 @@
-"""System tray integration.
-
-Wraps pystray so the rest of the app doesn't need to know the details, and
-degrades gracefully (tray simply unavailable) if pystray/Pillow aren't
-installed - the app should never crash just because the tray icon can't
-be shown.
-"""
 import threading
 from pathlib import Path
 from typing import Callable, Optional
@@ -13,7 +6,7 @@ try:
     import pystray
     from PIL import Image
     TRAY_AVAILABLE = True
-except ImportError:  # pragma: no cover - optional dependency
+except ImportError:
     pystray = None
     Image = None
     TRAY_AVAILABLE = False
@@ -36,6 +29,7 @@ class TrayManager:
         self.on_exit = on_exit
         self._icon = None
         self._thread: Optional[threading.Thread] = None
+        self._last_notification = ("", "")
 
     @property
     def available(self) -> bool:
@@ -70,6 +64,9 @@ class TrayManager:
             self._icon = None
 
     def notify(self, title: str, message: str) -> None:
+        if (title, message) == self._last_notification:
+            return
+        self._last_notification = (title, message)
         if self._icon is not None:
             try:
                 self._icon.notify(message, title)

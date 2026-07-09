@@ -1,4 +1,5 @@
 import json
+import platform
 import shutil
 import subprocess
 import sys
@@ -7,7 +8,7 @@ import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from mayan_miner.config import _app_dir
 
@@ -51,12 +52,45 @@ def get_latest_xmrig_release() -> Dict:
     return _github_api_json(url)
 
 
+def _is_windows_asset(name: str) -> bool:
+    return any(tag in name for tag in ("windows", "win64", "win32", "win-arm64", "mingw"))
+
+
+def _arch_score(name: str) -> int:
+    """Return higher score for better architecture match on current system."""
+    is_64bit = platform.machine().endswith("64")
+    # Prefer exact win64/x64 on 64-bit; win32/x86 on 32-bit
+    if is_64bit:
+        if "win64" in name or "x64" in name or "amd64" in name:
+            return 3 if "cuda" not in name else 2
+        if "windows" in name and "arm" not in name:
+            return 2
+        if "win32" in name or "x86" in name:
+            return 1
+    else:
+        if "win32" in name or "x86" in name:
+            return 3
+        if "windows" in name and "arm" not in name:
+            return 2
+        if "win64" in name or "x64" in name:
+            return 1
+    if "arm64" in name or "aarch64" in name:
+        return -1
+    return 0
+
+
 def _choose_xmrig_asset(release_data: Dict) -> Optional[Dict]:
+    candidates: List[Dict] = []
     for asset in release_data.get("assets", []):
         name = asset.get("name", "").lower()
-        if name.endswith(".zip") and "windows" in name:
-            return asset
-    return None
+        if not name.endswith(".zip"):
+            continue
+        if _is_windows_asset(name) or "msvc" in name or "mingw" in name:
+            candidates.append(asset)
+    if not candidates:
+        return None
+    candidates.sort(key=lambda a: _arch_score(a.get("name", "").lower()), reverse=True)
+    return candidates[0]
 
 
 def download_latest_xmrig() -> Path:
@@ -66,7 +100,7 @@ def download_latest_xmrig() -> Path:
         raise RuntimeError("Could not find a Windows zip asset for XMRig.")
     url = asset["browser_download_url"]
     target_zip = get_miner_install_dir() / asset["name"]
-    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": USER_AGENT}), timeout=60) as response:
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": USER_AGENT}), timeout=120) as response:
         with open(target_zip, "wb") as handle:
             shutil.copyfileobj(response, handle)
     with zipfile.ZipFile(target_zip, "r") as archive:
@@ -81,6 +115,16 @@ def download_latest_xmrig() -> Path:
         target_zip.unlink()
     except OSError:
         pass
+    try:
+        result = subprocess.run([str(installed_path), "--version"], capture_output=True, text=True, timeout=10)
+        if result.returncode != 0:
+            raise RuntimeError(f"XMRig binary at {installed_path} failed verification: {result.stderr.strip()}")
+    except FileNotFoundError:
+        raise RuntimeError(f"XMRig binary not found at {installed_path} after download")
+    except OSError as error:
+        raise RuntimeError(f"XMRig binary at {installed_path} is not compatible with this system: {error}")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("XMRig --version timed out")
     return installed_path
 
 

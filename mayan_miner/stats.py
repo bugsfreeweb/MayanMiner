@@ -1,69 +1,38 @@
-"""Parses live miner stdout (XMRig / SRBMiner-style output) into the
-hashrate history, share counts, and uptime shown on the dashboard.
-
-This intentionally stays a light regex-based parser rather than talking to
-a miner's local HTTP API: it works the same way regardless of which miner
-binary is plugged in (xmrig, srbminer, or a fully custom one), which matches
-how flexible the rest of this app is about the underlying miner.
-"""
 import re
 import time
 from collections import deque
 from typing import Deque, Optional, Tuple
 
 
-# Strip ANSI / VT escape sequences (colors, cursor moves, OSC sequences)
-# that XMRig emits on Windows when its stdout is connected to a pipe that
-# still has VT support enabled. Without this, every value in a colored line
-# ends up wrapped in "\x1b[...m" which breaks the regex matchers below.
-_ANSI_ESCAPE_RE = re.compile(
-    r"\x1b\[[0-9;?]*[ -/]*[@-~]"      # CSI sequences: ESC [ ... letter
-    r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC sequences: ESC ] ... (BEL|ST)
-    r"|\x1b[=>78]"                            # misc single-char escapes
-    r"|\r",                                   # CR (XMRig uses CRLF on Windows)
-)
-
-# Real XMRig periodic summary line, e.g.:
-#   "speed 10s/60s/15m 1234.5 1300.2 1250.0 H/s max 1400.0 H/s"
-# The three numbers are always plain H/s (xmrig does not auto-scale units on
-# this line), so the first (10s average) is used as the "current" reading.
 _XMRIG_SPEED_RE = re.compile(
-    r"speed\s+\S+/\S+/\S*\s+([\d.]+)\s+[\d.]+\s+[\d.]+\s*h/s",
+    r"speed\s+(?:\S+/\S+/\S+\s+)?([\d.]+)\s+[\d.]+\s+[\d.]+\s*H/s",
     re.IGNORECASE,
 )
-# Generic "Hashrate: 12.3 MH/s" / "hashrate 1.2KH/s" style line used by other
-# miners (e.g. SRBMiner), where the unit prefix does vary.
+_SRB_SPEED_RE = re.compile(
+    r"Speed\s*\[.*?\]\s*:\s*([\d.]+)",
+    re.IGNORECASE,
+)
 _GENERIC_HASHRATE_RE = re.compile(
-    r"hashrate\D{0,6}?([\d.,]+)\s*(K|M|G|T)?H/s",
+    r"(?:\bhashrate|total|speed)\D{0,20}?([\d.,]+)\s*(K|M|G|T)?H/s",
     re.IGNORECASE,
 )
-# Accepted/rejected share counter, seen as both "accepted (1/0)" (xmrig) and
-# the bare "Accepted 1/0" form used by SRBMiner-multi / cpuminer forks.
+_FALLBACK_HASHRATE_RE = re.compile(
+    r"([\d.]+)\s*(K|M|G|T)?H/s",
+    re.IGNORECASE,
+)
 _ACCEPTED_RE = re.compile(
-    r"accepted\D{0,12}?\(?(\d+)\s*/\s*(\d+)\)?",
+    r"(?:accepted|acc)\D{0,30}?\(?(\d+)\s*[/,:]\s*(\d+)\)?",
     re.IGNORECASE,
 )
-_UNIT_MULTIPLIER = {
-    None: 1.0, "": 1.0, "K": 1_000.0, "M": 1_000_000.0,
-    "G": 1_000_000_000.0, "T": 1_000_000_000_000.0,
-}
-
-
-def sanitize_line(line: str) -> str:
-    """Strip ANSI / VT escape sequences from one miner output line.
-
-    XMRig (especially on Windows builds with VT support, and many forks)
-    emits colorized output even when stdout is piped through subprocess.PIPE
-    because the Windows 10+ console transparently enables VT processing. The
-    color codes otherwise sneak into every token and break the regexes.
-    """
-    return _ANSI_ESCAPE_RE.sub("", line)
+_SHARE_KEYWORD_RE = re.compile(
+    r"\b(?:share\s*found|found\s*share|new\s*share)\b",
+    re.IGNORECASE,
+)
+_UNIT_MULTIPLIER = {None: 1.0, "K": 1_000.0, "M": 1_000_000.0, "G": 1_000_000_000.0, "T": 1_000_000_000_000.0}
 
 
 class MiningStatsTracker:
-    """Rolling, thread-safe-enough (single-writer) mining telemetry store."""
-
-    def __init__(self, history_length: int = 120) -> None:
+    def __init__(self, history_length: int = 8640) -> None:
         self.history_length = history_length
         self.hashrate_history: Deque[float] = deque(maxlen=history_length)
         self.current_hashrate: float = 0.0
@@ -71,6 +40,9 @@ class MiningStatsTracker:
         self.accepted_shares: int = 0
         self.rejected_shares: int = 0
         self.started_at: Optional[float] = None
+        self.last_share_found_at: Optional[float] = None
+        self._last_accepted = 0
+        self._last_rejected = 0
 
     def reset(self) -> None:
         self.hashrate_history.clear()
@@ -79,17 +51,14 @@ class MiningStatsTracker:
         self.accepted_shares = 0
         self.rejected_shares = 0
         self.started_at = time.monotonic()
+        self.last_share_found_at = None
+        self._last_accepted = 0
+        self._last_rejected = 0
 
-    def feed_line(self, line: str) -> bool:
-        """Update stats from one line of miner output.
-
-        Returns True if the line changed anything worth redrawing for.
-        """
-        line = sanitize_line(line)
-
-        changed = False
-
+    def feed_line(self, line: str) -> str:
+        changed = ""
         value = None
+
         xmrig_match = _XMRIG_SPEED_RE.search(line)
         if xmrig_match:
             try:
@@ -98,31 +67,59 @@ class MiningStatsTracker:
                 value = None
 
         if value is None:
+            srb_match = _SRB_SPEED_RE.search(line)
+            if srb_match:
+                try:
+                    value = float(srb_match.group(1))
+                except ValueError:
+                    value = None
+
+        if value is None:
             generic_match = _GENERIC_HASHRATE_RE.search(line)
             if generic_match:
                 raw_value, unit = generic_match.groups()
                 try:
-                    value = float(
-                        raw_value.replace(",", "").replace(" ", "")
-                    ) * _UNIT_MULTIPLIER.get((unit or "").upper() or None, 1.0)
+                    value = float(raw_value.replace(",", "")) * _UNIT_MULTIPLIER.get(
+                        (unit or "").upper() or None, 1.0
+                    )
                 except ValueError:
                     value = None
 
-        if value is not None and value >= 0:
+        if value is None:
+            fallback_match = _FALLBACK_HASHRATE_RE.search(line)
+            if fallback_match:
+                raw_value, unit = fallback_match.groups()
+                try:
+                    value = float(raw_value.replace(",", "")) * _UNIT_MULTIPLIER.get(
+                        (unit or "").upper() or None, 1.0
+                    )
+                except ValueError:
+                    value = None
+
+        if value is not None:
             self.current_hashrate = value
             self.peak_hashrate = max(self.peak_hashrate, value)
             self.hashrate_history.append(value)
-            changed = True
+            changed = "hashrate"
 
         accepted_match = _ACCEPTED_RE.search(line)
         if accepted_match:
             accepted, rejected = accepted_match.groups()
-            try:
+            if int(accepted) > self._last_accepted or int(rejected) > self._last_rejected:
                 self.accepted_shares = int(accepted)
                 self.rejected_shares = int(rejected)
-                changed = True
-            except ValueError:
-                pass
+                self.last_share_found_at = time.monotonic()
+                self._last_accepted = self.accepted_shares
+                self._last_rejected = self.rejected_shares
+                changed = "share"
+            else:
+                self.accepted_shares = int(accepted)
+                self.rejected_shares = int(rejected)
+                self._last_accepted = self.accepted_shares
+                self._last_rejected = self.rejected_shares
+        elif _SHARE_KEYWORD_RE.search(line):
+            self.last_share_found_at = time.monotonic()
+            changed = "share"
 
         return changed
 
@@ -137,9 +134,22 @@ class MiningStatsTracker:
         minutes, seconds = divmod(remainder, 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
+    def last_share_label(self) -> str:
+        if not self.last_share_found_at:
+            return "N/A"
+        elapsed = time.monotonic() - self.last_share_found_at
+        if elapsed < 60:
+            return f"{int(elapsed)}s ago"
+        elif elapsed < 3600:
+            return f"{int(elapsed // 60)}m {int(elapsed % 60)}s ago"
+        else:
+            hours = int(elapsed // 3600)
+            minutes = int((elapsed % 3600) // 60)
+            return f"{hours}h {minutes}m ago"
+
     @staticmethod
     def format_hashrate(value: float) -> str:
-        for unit, factor in (("TH/s", 1e12), ("GH/s", 1e9), ("MH/s", 1e6), ("KH/s", 1e3)):
+        for unit, factor in (("GH/s", 1e9), ("MH/s", 1e6), ("KH/s", 1e3)):
             if value >= factor:
                 return f"{value / factor:.2f} {unit}"
         return f"{value:.1f} H/s"

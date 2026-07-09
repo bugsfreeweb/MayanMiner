@@ -1,17 +1,9 @@
-"""Theme-aware UI building blocks shared by the dashboard.
-
-The real-time chart is drawn directly on a tk.Canvas rather than pulling in
-matplotlib: it keeps the frozen .exe smaller and startup fast, and a simple
-scrolling line is all a live hashrate readout needs.
-
-Every visual element takes an optional `palette` dict so the host can swap
-dark/light themes at runtime without recreating widgets.
-"""
+import time
 import tkinter as tk
-from typing import Callable, Dict, Optional, Sequence
+from collections import deque
+from typing import Dict, List, Optional, Sequence, Tuple
 
 
-# Fallback palette used when a widget is created without one.
 _FALLBACK = {
     "card": "#111827", "card_alt": "#1a2332", "card_label_fg": "#94a3b8",
     "value_fg": "#f8fafc", "console_bg": "#020617", "console_text": "#f8fafc",
@@ -32,10 +24,6 @@ class RealtimeChart(tk.Canvas):
         **kwargs,
     ) -> None:
         p = {**_FALLBACK, **(palette or {})}
-        # `bg` may already be present in kwargs if the caller passed it explicitly
-        # (older call sites did this). Pop it out first so we never pass `bg`
-        # twice to Canvas.__init__, which raises "multiple values for keyword
-        # argument 'bg'" and crashes the whole dashboard on startup.
         bg_color = kwargs.pop("bg", p["console_bg"])
         super().__init__(
             master,
@@ -48,10 +36,16 @@ class RealtimeChart(tk.Canvas):
         self._palette = p
         self.bind("<Configure>", lambda _event: self.redraw())
         self._last_values: Sequence[float] = []
+        self._share_flash = 0
+        self._flash_id = None
 
     def set_palette(self, palette: Dict[str, str]) -> None:
         self._palette = {**_FALLBACK, **palette}
         self.configure(bg=self._palette["console_bg"])
+        self.redraw()
+
+    def flash_share(self) -> None:
+        self._share_flash = 6
         self.redraw()
 
     def redraw(self, values: Optional[Sequence[float]] = None) -> None:
@@ -65,11 +59,19 @@ class RealtimeChart(tk.Canvas):
         height = max(self.winfo_height(), 10)
         pad_left, pad_right, pad_top, pad_bottom = 8, 8, 12, 20
 
+        if self._share_flash > 0:
+            flash_color = "#fbbf24"
+            self.create_rectangle(0, 0, width, height, fill=flash_color, stipple="gray12", outline="")
+            self._share_flash -= 1
+            if self._flash_id:
+                self.after_cancel(self._flash_id)
+            self._flash_id = self.after(200, lambda: (setattr(self, "_share_flash", max(0, self._share_flash - 1)), self.redraw()))
+
         for fraction in (0.25, 0.5, 0.75):
             y = pad_top + (height - pad_top - pad_bottom) * fraction
             self.create_line(pad_left, y, width - pad_right, y, fill=p["grid_color"], dash=(2, 3))
 
-        if not values or len(values) < 2:
+        if not values:
             self.create_text(
                 width / 2, height / 2,
                 text="Waiting for miner output...",
@@ -110,11 +112,6 @@ class RealtimeChart(tk.Canvas):
 
 
 class StatCard(tk.Frame):
-    """Small rounded-feeling stat tile used across the dashboard header.
-
-    Theme-aware: call `set_palette(...)` to re-skin without rebuilding.
-    """
-
     def __init__(
         self,
         master,
@@ -150,7 +147,6 @@ class StatCard(tk.Frame):
         bg = p["card"]
         self.configure(bg=bg)
         self._title_label.configure(bg=bg, fg=p.get("card_label_fg", "#94a3b8"))
-        # Keep the original accent unless the new palette wants a different "value" color
         self._value_label.configure(bg=bg, fg=self._accent)
 
     def set_accent(self, accent: str) -> None:
@@ -159,3 +155,107 @@ class StatCard(tk.Frame):
 
     def set(self, value: str) -> None:
         self.value_var.set(value)
+
+    def set_title(self, title: str) -> None:
+        self._title_label.configure(text=title)
+
+    def flash(self, color: str = "#fbbf24") -> None:
+        original = self._accent
+        self._value_label.configure(fg=color)
+        self.after(500, lambda: self._value_label.configure(fg=original))
+
+
+class ShareFeed(tk.Frame):
+    def __init__(self, master, *, palette: Optional[Dict[str, str]] = None, **kwargs):
+        p = {**_FALLBACK, **(palette or {})}
+        super().__init__(master, bg=p["card"], padx=14, pady=12, **kwargs)
+        self._palette = p
+        self._events: Deque[Tuple[str, str, float]] = deque(maxlen=50)
+        self._entry_labels: List[tk.Frame] = []
+        self._max_visible = 8
+
+        header = tk.Frame(self, bg=p["card"])
+        header.pack(fill="x")
+        tk.Label(header, text="Recent Events", fg=p["card_label_fg"], bg=p["card"],
+                 font=("Segoe UI", 9, "bold")).pack(side="left")
+
+        self._body = tk.Frame(self, bg=p["card"])
+        self._body.pack(fill="both", expand=True, pady=(8, 0))
+
+    def set_palette(self, palette: Dict[str, str]) -> None:
+        p = {**_FALLBACK, **palette}
+        self._palette = p
+        self.configure(bg=p["card"])
+        for child in self.winfo_children():
+            try:
+                child.configure(bg=p["card"])
+            except tk.TclError:
+                pass
+
+    def add_share(self, share_type: str, count: int = 1) -> None:
+        now = time.monotonic()
+        self._events.appendleft((share_type, str(count), now))
+        self._rebuild()
+        children = self._body.winfo_children()
+        if children:
+            self.after(50, lambda: self._flash_entry(children[0], 4))
+
+    def _flash_entry(self, widget: tk.Frame, remaining: int) -> None:
+        if remaining <= 0:
+            widget.configure(bg=self._palette["card"])
+            return
+        target = self._palette["card_alt"] if remaining % 2 else self._palette["card"]
+        widget.configure(bg=target)
+        for child in widget.winfo_children():
+            try:
+                child.configure(bg=target)
+            except tk.TclError:
+                pass
+        self.after(120, lambda: self._flash_entry(widget, remaining - 1))
+
+    def _rebuild(self) -> None:
+        for child in self._body.winfo_children():
+            child.destroy()
+        self._entry_labels.clear()
+        p = self._palette
+
+        visible = list(self._events)[:self._max_visible]
+        if not visible:
+            empty = tk.Label(self._body, text="Waiting for shares...", fg=p["faint"],
+                              bg=p["card"], font=("Segoe UI", 9))
+            empty.pack(fill="x", pady=2)
+            self._entry_labels.append(empty)
+            return
+
+        for share_type, count, timestamp in visible:
+            elapsed = time.monotonic() - timestamp
+            time_str = f"{int(elapsed)}s ago" if elapsed < 60 else f"{int(elapsed//60)}m ago"
+
+            if share_type == "accepted":
+                icon = "\U0001f60a"
+                icon_color = p["success"]
+                desc = f"Share accepted"
+            elif share_type == "rejected":
+                icon = "\U0001f61e"
+                icon_color = p["danger"]
+                desc = f"Share rejected"
+            elif share_type == "error":
+                icon = "\u26a0\ufe0f"
+                icon_color = p["warning"]
+                desc = count
+            else:
+                icon = "\U0001f4a1"
+                icon_color = p["accent"]
+                desc = count
+
+            row = tk.Frame(self._body, bg=p["card"])
+            row.pack(fill="x", pady=2)
+
+            dot = tk.Label(row, text=icon, fg=icon_color, bg=p["card"],
+                           font=("Segoe UI", 11))
+            dot.pack(side="left", padx=(0, 6))
+
+            tk.Label(row, text=f"{desc}  {time_str}", fg=p["card_label_fg"],
+                      bg=p["card"], font=("Segoe UI", 9)).pack(side="left")
+
+            self._entry_labels.append(row)
