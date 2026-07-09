@@ -152,6 +152,7 @@ class MayanMinerApp:
         self._refresh_status()
         self._refresh_installed_miner_status()
         self._tick_dashboard()
+        self._ensure_desktop_shortcut()
 
         self.root.protocol("WM_DELETE_WINDOW", self._on_close_request)
         self.root.bind("<Unmap>", self._on_minimize)
@@ -160,6 +161,27 @@ class MayanMinerApp:
             self.root.after(50, self.root.withdraw)
             if bool(config.get("start_mining_on_login", False)):
                 self.root.after(500, self._start_mining)
+
+    def _ensure_desktop_shortcut(self) -> None:
+        try:
+            desktop = Path(os.path.expanduser("~/Desktop"))
+            shortcut = desktop / "MayanMiner.lnk"
+            if shortcut.exists():
+                return
+            exe = Path(sys.executable).resolve()
+            target = str(exe)
+            workdir = str(exe.parent)
+            ps = (
+                f"$s = New-Object -ComObject WScript.Shell;"
+                f"$c = $s.CreateShortcut('{shortcut}');"
+                f"$c.TargetPath = '{target}';"
+                f"$c.WorkingDirectory = '{workdir}';"
+                f"$c.Description = 'Mayan Miner v{APP_VERSION}';"
+                f"$c.Save()"
+            )
+            subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, timeout=15)
+        except Exception:
+            pass
 
     def _set_taskbar_icon(self):
         ico_path = _resource_path("assets/logo.ico")
@@ -303,6 +325,8 @@ class MayanMinerApp:
             else:
                 btn.configure(fg=c["muted"], bg=c["surface"],
                               font=("Segoe UI", 10, "bold"))
+        if tab == "stats":
+            self.root.after_idle(self._update_stats_tab)
 
     def _nav_hover(self, btn: tk.Label, entering: bool) -> None:
         c = self.colors
@@ -407,17 +431,20 @@ class MayanMinerApp:
         self.log_text.configure(state="disabled")
 
     def _tick_dashboard(self) -> None:
-        if self.controller.is_running():
-            self.uptime_card.set(self.stats.uptime_label())
-            self.shares_card.set(f"{self.stats.accepted_shares} / {self.stats.rejected_shares}")
-            self.last_share_card.set(self.stats.last_share_label())
-            self.hashrate_card.set(self.stats.format_hashrate(self.stats.current_hashrate))
-            data = list(self.stats.hashrate_history)
-            if data:
-                self.chart.redraw(data)
-                self._update_stats_chart()
-        self._check_dev_fee()
-        self._update_stats_tab()
+        try:
+            if self.controller.is_running():
+                self.uptime_card.set(self.stats.uptime_label())
+                self.shares_card.set(f"{self.stats.accepted_shares} / {self.stats.rejected_shares}")
+                self.last_share_card.set(self.stats.last_share_label())
+                self.hashrate_card.set(self.stats.format_hashrate(self.stats.current_hashrate))
+                data = list(self.stats.hashrate_history)
+                if data:
+                    self.chart.redraw(data)
+                    self._update_stats_chart()
+            self._check_dev_fee()
+            self._update_stats_tab()
+        except Exception as exc:
+            self._append_log(f"[tick] {exc}\n")
         self.root.after(1000, self._tick_dashboard)
 
     def _build_stats(self, parent: "tk.Frame") -> None:
