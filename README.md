@@ -1,7 +1,7 @@
 # Mayan Miner v1.2.0
 
 Open-source Windows-first CPU/GPU mining launcher with a polished desktop dashboard, live monitoring, automation features, and built-in XMRig installer.
-
+![Mayan_Miner_App](output/dashboard.png)
 ## Features
 - **Dashboard**: 12 real-time stat cards (status, hashrate, shares, uptime, last share, est. earnings, pool latency, GPU/CPU temp, restarts, blocks found), live hashrate chart, miner output console with expand/collapse toggle, animated canvas-based coin/algo banner with pulse effect
 - **Stats**: Performance tab (hashrate chart with 1h/4h/6h/12h/24h/All time-range buttons, ShareFeed event column) and System tab (connection status, drops, uptime, worker, threads, peak hashrate, active pool info)
