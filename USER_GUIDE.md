@@ -1,4 +1,4 @@
-# Mayan Miner v2.0.1 User Guide
+# Mayan Miner v2.0.2 User Guide
 
 ## Table of Contents
 1. [Quick Start](#quick-start)
@@ -6,12 +6,13 @@
 3. [Multi-Coin Mining](#multi-coin-mining)
 4. [Stats Page](#stats-page)
 5. [Settings](#settings)
-6. [Miner Tools](#miner-tools)
-7. [Automation](#automation)
-8. [Configuration Profiles](#configuration-profiles)
-9. [Theme](#theme)
-10. [Tray & Startup](#tray--startup)
-11. [Frequently Asked Questions](#frequently-asked-questions)
+6. [Rig Management](#rig-management)
+7. [Miner Tools](#miner-tools)
+8. [Automation](#automation)
+9. [Configuration Profiles](#configuration-profiles)
+10. [Theme](#theme)
+11. [Tray & Startup](#tray--startup)
+12. [Frequently Asked Questions](#frequently-asked-questions)
 
 ---
 
@@ -28,17 +29,19 @@
 
 ## Dashboard
 
-The dashboard shows up to **4 coins** in a 2×2 grid. Each coin card displays:
+The dashboard shows coins in a **scrollable grid** (default 4, configurable up to 20 in Settings > General > Display). Each coin card displays:
 
 | Element | Description |
 |---------|-------------|
 | Miner Badge | XMRig (cyan), SRBMiner (purple), or Custom (orange) |
 | Ticker & Name | Coin identifier and full name |
 | Hashrate | Current hashrate (updates every second) |
-| Mini Chart | Live hashrate history |
+| Mini Chart | Live hashrate history (visible when mining) |
 | Pool & Algo | Pool URL and algorithm |
 | CPU Cores | Adjustable core allocation (0 = auto) |
-| Est. Earnings | Estimated daily earnings in USD |
+| Est. Earnings | Estimated daily earnings in USD or live price |
+| GPU Temp | Temperature and fan speed (when available) |
+| Pool Latency | Ping response time to pool |
 | Start/Stop | Mining control buttons |
 | Details | Opens detailed stats window |
 
@@ -59,19 +62,31 @@ The dashboard shows up to **4 coins** in a 2×2 grid. Each coin card displays:
    - Coin Name, Ticker, Algorithm
    - Pool URL, Wallet Address
    - Mining Tool selection (XMRig/SRBMiner/Custom)
-5. Maximum 4 coins on the dashboard — the Add Coin button is disabled when at limit.
+5. Maximum coins configurable in Settings > General > Display (default 4).
 
 ### Detail Window
 Click **Details** on any coin card to see:
-- Hashrate, Shares/Blocks, Uptime, Est. Earnings
+- **Hashrate** — current mining speed
+- **Shares/Blocks** — accepted/rejected shares (CPU) or blocks found (GPU)
+- **Difficulty** — current network difficulty (parsed from miner output)
+- **Block Height** — current blockchain height (parsed from miner output)
+- **Uptime** — how long the miner has been running
+- **Est. Earnings** — projected daily income in USD
 - Full hashrate history chart
 - Raw miner output log
+
+### Price Display
+All coins on the dashboard show live CoinGecko price data:
+- Coins with price data show the current USD price with 24h change percentage
+- Coins actively mining show estimated daily earnings based on hashrate
+- Coins without CoinGecko listing show "Price not trackable"
+- Custom coins with a CoinGecko ID also get automatic price tracking
 
 ---
 
 ## Multi-Coin Mining
 
-Mayan Miner v2.0 supports mining multiple coins simultaneously. Each coin runs its own miner subprocess independently.
+Mayan Miner supports mining multiple coins simultaneously. Each coin runs its own miner subprocess independently.
 
 ### How it works
 - Each coin card has its own **Start/Stop** button
@@ -84,6 +99,9 @@ Mayan Miner v2.0 supports mining multiple coins simultaneously. Each coin runs i
 - **Max** = total CPU cores minus 10% reserve
 - Adjust the Spinbox on each coin card to set the core count
 
+### Any Coin, Any Miner
+All coins in the database can be mined with either XMRig or SRBMiner, for both CPU and GPU mining. The mining tool selection is flexible — choose whichever works best for your hardware.
+
 ---
 
 ## Stats Page
@@ -92,6 +110,7 @@ The stats page shows detailed performance information for mining coins.
 
 ### Performance Tab
 - **Hashrate chart** with time-range buttons: 1h, 4h, 6h, 12h, 24h, All
+- **Share Difficulty chart** — visualizes share difficulty over time
 - **Per-coin checkboxes** to show/hide individual coin data in the chart
 - **Coin info** — active coin, algorithm, shares/blocks, acceptance rate
 - **ShareFeed** — live feed of accepted/rejected shares with emoji indicators
@@ -112,8 +131,10 @@ Organized into 6 tabs:
 - **Add Pool** — enter pool URL, wallet, worker, password, algorithm
 - **Mining Tool** — select which miner to use for this coin (XMRig/SRBMiner/Custom)
 - **TLS** and **Proxy** checkboxes (default unticked)
-- First pool = primary, rest = auto-failover
-- Add custom coins directly from the Pools tab (includes Pool URL, Wallet, and Mining Tool)
+- **Move Up/Down** — reorder pools to set primary and failover priority
+  - First pool = primary (used first)
+  - Remaining pools = auto-failover (used in order if primary fails)
+- Add custom coins directly from the Pools tab
 
 ### Hardware
 - GPU mining configuration (NVIDIA CUDA)
@@ -123,15 +144,13 @@ Organized into 6 tabs:
 - **2-column layout** — XMRig card on left, SRBMiner card on right
 - Separate **Install** and **Update** buttons for each miner
 - Version status displayed (installed version or "not found")
-- **Custom Miners** grid (2×2) — add up to 4 custom miner executables
+- **Custom Miners** grid (2x2) — add up to 4 custom miner executables
 
 ### General
-- Show splash screen on startup
-- Keep running in system tray when minimized
-- Show tray icon
-- Start mining automatically at Windows login
-- **Theme** — Dark / Light (applies immediately)
-- Developer fee displayed (0.2%, not editable)
+- **Application**: Show splash screen on startup, keep running in system tray, show tray icon
+- **Display**: Configure max coins on dashboard (1-20), graph history points (30-500)
+- **Developer Fee**: 0.2% (displayed, not editable)
+- **Logging**: Enable persistent mining log to file
 - **Check Updates** — verifies GitHub releases for newer versions
 
 ### Automation
@@ -142,6 +161,35 @@ Organized into 6 tabs:
 ### Profiles
 - **Save/Load/Delete** named profiles
 - **Export/Import** config as JSON backup
+
+---
+
+## Rig Management
+
+The Rig Management page lets you monitor and manage multiple mining rigs from one interface.
+
+### Adding a Rig
+1. Go to **Rigs** in the sidebar.
+2. Click **+ Add Rig**.
+3. Enter the rig name, host/IP address, and port.
+4. Click **Save**.
+
+### Editing a Rig
+1. Click **Edit** on any rig card.
+2. Modify the name, host, or port.
+3. Click **Save**.
+
+### Rig Card Information
+Each rig card shows:
+- **Status** — online/offline (green/red dot)
+- **Hashrate** — total hashrate across all coins
+- **Coins** — number of coins being mined
+- **GPU Temp** — current GPU temperature
+- **Uptime** — how long the rig has been running
+- **Shares** — total accepted shares
+
+### Refresh
+Click **Refresh All** to update all rig statuses. The local rig updates automatically from the current mining session.
 
 ---
 
@@ -158,7 +206,7 @@ Organized into 6 tabs:
 1. Click **+ Add Custom Miner** in the Custom Miners section.
 2. Enter a name and browse for the executable path.
 3. Select the miner type (XMRig, SRBMiner, or Custom).
-4. Maximum 4 custom miners in a 2×2 grid.
+4. Maximum 4 custom miners in a 2x2 grid.
 
 ---
 
@@ -168,7 +216,7 @@ Organized into 6 tabs:
 If the miner crashes, Mayan Miner can restart it automatically. Configure the maximum number of retry attempts and the delay between restarts.
 
 ### Pool failover
-When enabled with multiple pools, sustained connection drops or a miner crash triggers failover to the next enabled pool — no manual intervention needed.
+When enabled with multiple pools, sustained connection drops or a miner crash triggers failover to the next enabled pool — no manual intervention needed. Use the Move Up/Down buttons in Settings > Pools to set failover order.
 
 ### Scheduled mining
 Set a daily time window (e.g., 22:00 to 08:00) for automatic mining.
@@ -199,7 +247,7 @@ Profiles store all settings for quick switching.
 
 ## Theme
 
-Choose between **Dark** and **Light** themes in **Settings > General**. Click **Apply** — the entire UI switches immediately without restarting the app.
+Choose between **Dark** and **Light** themes in **Settings > General**. The theme applies immediately without restarting the app.
 
 ---
 
@@ -213,10 +261,10 @@ Choose between **Dark** and **Light** themes in **Settings > General**. Click **
 ## Frequently Asked Questions
 
 **Q: Where are my settings stored?**
-A: `%APPDATA%\MayanMiner\config.json` (encrypted). You can open the data folder from **Settings > General > Open data folder**.
+A: `%LOCALAPPDATA%\MayanMiner\config.json` (encrypted). The app data folder also stores downloaded miner binaries and log files.
 
 **Q: How do I mine a coin that's not in the database?**
-A: Go to **Dashboard > Add Coin** (or **Settings > Pools > Add Coin**) and click **+ Add Custom Coin**. Enter the ticker, name, algorithm, and mine type (cpu/gpu).
+A: Go to **Dashboard > Add Coin** (or **Settings > Pools > Add Coin**) and click **+ Add Custom Coin**. Enter the ticker, name, algorithm, and mine type (cpu/gpu). Custom coins with a CoinGecko ID get automatic price tracking.
 
 **Q: Why is the hashrate showing 0 H/s?**
 A: Make sure the miner is installed (**Settings > Miner Tools**) and a pool is configured with a valid wallet address (**Settings > Pools**).
@@ -224,11 +272,11 @@ A: Make sure the miner is installed (**Settings > Miner Tools**) and a pool is c
 **Q: Can I mine with both XMRig and SRBMiner at the same time?**
 A: Yes. Each coin card lets you select the mining tool. You can have XMRig mining XMR on CPU while SRBMiner mines RVN on GPU simultaneously.
 
-**Q: Why is EST. EARNINGS showing the coin name instead of a dollar amount?**
-A: Earnings estimates are only available for coins with CoinGecko price data. For coins without price data, the coin name is displayed instead.
+**Q: Why is EST. EARNINGS showing a price instead of a dollar amount?**
+A: Earnings estimates require both CoinGecko price data AND an active mining hashrate. When not mining, the card shows the live CoinGecko price with 24h change. When mining, it shows estimated daily earnings.
 
 **Q: How does pool failover work?**
-A: If the connection drops or the miner crashes, the app automatically switches to the next enabled pool. A `[failover]` entry is written to the log.
+A: If the connection drops or the miner crashes, the app automatically switches to the next enabled pool. Use the Move Up/Down buttons in Settings > Pools to set the failover order.
 
 **Q: What is the 0.2% developer fee?**
 A: Every 499 seconds, the launcher mines for ~1 second to the developer wallet to support continued development. This fee is not editable.
@@ -237,10 +285,22 @@ A: Every 499 seconds, the launcher mines for ~1 second to the developer wallet t
 A: Go to **Settings > General** and click **Check Updates**. If a newer version is available on GitHub, the button changes to **Download Update**.
 
 **Q: Can I see blocks found for GPU coins?**
-A: Yes — the detail window shows **Blocks Found** for GPU coins (RVN, ETC, KAS, etc.) and **Shares** (accepted/rejected) for CPU coins (XMR, SAL, etc.).
+A: Yes — the detail window shows **Blocks Found** for GPU coins (RVN, ETC, KAS, etc.) and **Shares** (accepted/rejected) for CPU coins (XMR, SAL, etc.). It also shows **Difficulty** and **Block Height** when available from miner output.
 
 **Q: Why are CMD windows flashing when I start mining?**
 A: This has been fixed in v2.0. All miner subprocesses run hidden — no CMD windows should appear.
 
 **Q: How do I add TLS or proxy to my pool?**
 A: Go to **Settings > Pools**, select your coin and pool, click **Edit**, then check **Use TLS** or enter a proxy address.
+
+**Q: How do I reorder pools for failover?**
+A: Go to **Settings > Pools**, select your coin, then use the **Up** and **Down** buttons to reorder pools. The first pool is primary, the rest are failover in order.
+
+**Q: Can I change how many coins appear on the dashboard?**
+A: Yes. Go to **Settings > General > Display** and adjust "Max coins on dashboard" (1-20, default 4).
+
+**Q: How do I manage multiple mining rigs?**
+A: Go to **Rigs** in the sidebar. Click **+ Add Rig** to add remote rigs by host/IP and port. Each rig card shows status, hashrate, and mining info. The local rig updates automatically.
+
+**Q: Does price tracking work for all coins?**
+A: Yes. All coins with a CoinGecko ID get automatic price tracking. Custom coins can also have a CoinGecko ID for price data. Coins without a CoinGecko listing show "Price not trackable".
