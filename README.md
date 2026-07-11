@@ -1,11 +1,14 @@
-# Mayan Miner v2.0.0
+# Mayan Miner v2.0.1
 
 Open-source Windows-first CPU/GPU mining launcher with a polished desktop dashboard, multi-coin mining, multi-miner support, live monitoring, automation features, and built-in miner installers.
 
+## What's New in v2.0.1
 
-Open-source Windows-first CPU/GPU mining launcher with a polished desktop dashboard, live monitoring, automation features, and built-in XMRig installer.
-![Mayan_Miner_App](output/dashboard.png)
-
+- Fixed miner output log not displaying after clearing while mining is running
+- Fixed desktop shortcut not being created by EXE build
+- Fixed MSI installer creating duplicate desktop shortcuts
+- Fixed CMD/PowerShell window flash on app launch
+- Fixed Settings "Check Updates" button now checks MayanMiner app updates instead of XMRig/SRBMiner
 
 ## Features
 

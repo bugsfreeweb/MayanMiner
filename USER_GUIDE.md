@@ -1,4 +1,4 @@
-# Mayan Miner v2.0.0 User Guide
+# Mayan Miner v2.0.1 User Guide
 
 ## Table of Contents
 1. [Quick Start](#quick-start)
