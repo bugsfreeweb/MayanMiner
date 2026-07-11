@@ -2,6 +2,11 @@
 
 Open-source Windows-first CPU/GPU mining launcher with a polished desktop dashboard, multi-coin mining, multi-miner support, live monitoring, automation features, and built-in miner installers.
 
+
+Open-source Windows-first CPU/GPU mining launcher with a polished desktop dashboard, live monitoring, automation features, and built-in XMRig installer.
+![Mayan_Miner_App](output/dashboard.png)
+
+
 ## Features
 
 ### Multi-Coin Dashboard
