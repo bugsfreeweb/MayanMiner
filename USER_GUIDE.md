@@ -1,4 +1,4 @@
-# Mayan Miner v2.0.2 User Guide
+# Mayan Miner v2.0.5 User Guide
 
 ## Table of Contents
 1. [Quick Start](#quick-start)
@@ -18,12 +18,20 @@
 
 ## Quick Start
 
-1. Launch Mayan Miner (a splash screen appears briefly).
-2. Go to **Settings > Miner Tools** — click **Install XMRig** or **Install SRBMiner** to download the miner.
-3. Go to **Settings > Pools** — select a coin and configure your pool URL and wallet address.
-4. Click **Save Settings** at the bottom.
-5. Go to **Dashboard** — click **Add Coin** to add a coin, then click **Start** on the coin card.
-6. Watch live hashrate, earnings, and charts update in real time.
+### Option 1: Installer
+1. Run `MayanMiner.exe` from the installer build.
+2. Launch Mayan Miner (a splash screen appears briefly).
+
+### Option 2: Portable (no installation)
+1. Extract the `MayanMiner-Portable` zip to any folder.
+2. Run `MayanMiner.exe` directly — no installation required.
+
+### Getting started
+1. Go to **Settings > Miner Tools** — click **Install XMRig** or **Install SRBMiner** to download the miner.
+2. Go to **Settings > Pools** — select a coin and configure your pool URL and wallet address.
+3. Click **Save Settings** at the bottom.
+4. Go to **Dashboard** — click **Add Coin** to add a coin, then click **Start** on the coin card.
+5. Watch live hashrate, earnings, and charts update in real time.
 
 ---
 
@@ -62,7 +70,8 @@ The dashboard shows coins in a **scrollable grid** (default 4, configurable up t
    - Coin Name, Ticker, Algorithm
    - Pool URL, Wallet Address
    - Mining Tool selection (XMRig/SRBMiner/Custom)
-5. Maximum coins configurable in Settings > General > Display (default 4).
+5. For **Qubic (QUBIC)**, the pool dialog shows Pool URL, Alias, and Access Token fields, plus an Import button to load settings from QubicMiner's `appsettings.json`.
+6. Maximum coins configurable in Settings > General > Display (default 4).
 
 ### Detail Window
 Click **Details** on any coin card to see:
@@ -204,9 +213,14 @@ Click **Refresh All** to update all rig statuses. The local rig updates automati
 
 ### Custom Miners
 1. Click **+ Add Custom Miner** in the Custom Miners section.
-2. Enter a name and browse for the executable path.
-3. Select the miner type (XMRig, SRBMiner, or Custom).
-4. Maximum 4 custom miners in a 2x2 grid.
+2. Enter a name and browse for the miner executable path.
+   - **XMRigCC users**: Set the daemon (`xmrigDaemon.exe`) as the Miner Executable — the daemon manages the miner internally. Leave Daemon Executable empty.
+   - Use **full paths** (e.g. `C:\xmrigCC\miner\xmrigDaemon.exe`), not bare filenames.
+   - Add `--cc-disabled` to **Extra args** to suppress CC Server dashboard errors if you don't run the CC Server.
+3. Optionally set a **Daemon Executable** (some coins require both a miner and a daemon/node running simultaneously).
+4. Select the miner type (XMRig, SRBMiner, or Custom).
+5. Maximum 8 custom miners.
+6. Changes are tracked — the **Save Custom Miners** button enables when you make changes and must be clicked to persist.
 
 ---
 
@@ -247,7 +261,7 @@ Profiles store all settings for quick switching.
 
 ## Theme
 
-Choose between **Dark** and **Light** themes in **Settings > General**. The theme applies immediately without restarting the app.
+Choose between **Dark** and **Light** themes in **Settings > General**. The theme applies immediately without restarting the app. Both themes now have full visibility for all UI elements including buttons, dropdowns, input fields, tabs, and disabled states.
 
 ---
 
@@ -288,7 +302,7 @@ A: Go to **Settings > General** and click **Check Updates**. If a newer version 
 A: Yes — the detail window shows **Blocks Found** for GPU coins (RVN, ETC, KAS, etc.) and **Shares** (accepted/rejected) for CPU coins (XMR, SAL, etc.). It also shows **Difficulty** and **Block Height** when available from miner output.
 
 **Q: Why are CMD windows flashing when I start mining?**
-A: This has been fixed in v2.0. All miner subprocesses run hidden — no CMD windows should appear.
+A: This has been fixed. All miner subprocesses run hidden — no CMD windows should appear.
 
 **Q: How do I add TLS or proxy to my pool?**
 A: Go to **Settings > Pools**, select your coin and pool, click **Edit**, then check **Use TLS** or enter a proxy address.
@@ -304,3 +318,33 @@ A: Go to **Rigs** in the sidebar. Click **+ Add Rig** to add remote rigs by host
 
 **Q: Does price tracking work for all coins?**
 A: Yes. All coins with a CoinGecko ID get automatic price tracking. Custom coins can also have a CoinGecko ID for price data. Coins without a CoinGecko listing show "Price not trackable".
+
+**Q: What does "cc error: unable to performRequest POST" mean?**
+A: This is a XMRigCC-specific error. The XMRigCC daemon tries to report stats to the CC Server dashboard (localhost:3344). If the CC Server (`xmrigServer.exe`) is not running, this error appears but **mining is unaffected**. To suppress it, add `--cc-disabled` to Extra args in the pool settings.
+
+**Q: How do I set up XMRigCC for coins like C64 CHAIN?**
+A: XMRigCC has 3 components: xmrigServer (dashboard), xmrigDaemon (manager), xmrigMiner (worker). In Mayan Miner:
+1. In **Custom Miners**, add a new entry with `xmrigDaemon.exe` as the Miner Executable (full path).
+2. Set Miner type to **XMRig-args**.
+3. Add `--cc-disabled` to Extra args if you don't need the CC dashboard.
+4. Click **Save Custom Miners**.
+5. In **Pools**, set Mining tool to **Custom** and select your saved custom miner.
+
+The app automatically patches the daemon's `config.json` with your pool, wallet, algorithm, and thread settings before starting, so the daemon uses your configuration instead of its bundled defaults.
+
+**Q: Why does mining fail with "Miner executable not found"?**
+A: The executable path is invalid or uses a bare filename. Always use the full path (e.g. `C:\xmrig\xmrig.exe`), not just `xmrig.exe`. Use the **...** browse button to select the file.
+
+**Q: How do I mine Qubic (QUBIC)?**
+A: Qubic uses QubicMiner instead of XMRig/SRBMiner. Steps:
+1. Install QubicMiner and set it up in **Settings > Miner Tools > Custom Miners**.
+2. In **Settings > Pools**, select QUBIC from the coin list.
+3. Click **Add Pool** — enter the Pool URL (wss://...), Alias, and Access Token. You can also click **Import from appsettings.json** to auto-fill from your QubicMiner config.
+4. Click **Save** and start mining from the Dashboard.
+Note: QUBIC uses an Access Token instead of a wallet address.
+
+**Q: How do I run Mayan Miner without installing?**
+A: Download the portable build, extract the zip, and run `MayanMiner.exe` directly. No installation needed — all data is stored in the extracted folder.
+
+**Q: Why does the app freeze when I stop mining?**
+A: This has been fixed. Stopping mining now runs in a background thread. The app should remain responsive while the miner shuts down. Process trees (daemon + miner) are killed together to ensure complete shutdown.

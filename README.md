@@ -1,31 +1,68 @@
-# Mayan Miner v2.0.2
+# Mayan Miner v2.0.5
 
 Open-source Windows-first CPU/GPU mining launcher with a polished desktop dashboard, multi-coin mining, multi-miner support, live monitoring, automation features, and built-in miner installers.
 
-## What's New in v2.0.2
+![Mayan ! Miner App launcher](output/dashboard.png)
+
+
+## What's New in v2.0.5
 
 ### New Features
-- **Pool Priority Ordering** — Move pools up/down in the Pools tab to set primary and failover priority by sequence
-- **Blockchain Stats in Detail Popup** — Block height and network difficulty now displayed alongside hashrate, shares, and earnings
-- **Configurable Max Coins** — Settings > General > Display lets you set 1-20 coins on the dashboard (default 4)
-- **Coin Details Popup Improvements** — Added DIFFICULTY and BLOCK HEIGHT stat cards with real-time updates
+- **CPU affinity pinning** — miner processes are now pinned to specific CPU cores based on thread count, reducing CPU usage in Task Manager
+- **Sidebar redesign** — larger icons, accent bar on active tab, improved spacing, better Rigs icon
+- **Pool coin reorder** — reorder your active coin list with Up/Down buttons
+- **Refresh button** — Pools tab now has a Refresh button to resync the coin list
+- **Unsaved changes warning** — warns before closing if you have unsaved settings
+- **Button disable during activity** — Save/Export/Import buttons are disabled and show status text while operations are in progress
 
 ### Improvements
-- **Price Display for All Coins** — All coins on dashboard now show live CoinGecko price data whether mining or not (previously only showed when actively mining)
-- **Custom Coin Price Tracking** — Custom coins with CoinGecko IDs now get automatic price fetching
-- **SRBMiner Share Parsing** — Expanded regex patterns to correctly parse SRBMiner's `Results: N, M` output format for shares/rejected stats
-- **Block Height & Difficulty Parsing** — Expanded patterns to match `new block #N`, `at height N`, `pool diff:`, `current diff:` formats from various miners
-- **Rig Management Scrollbar** — Scrollbar now hidden when content fits, mouse wheel scrolling enabled
-- **Settings Display Padding** — Improved spacing between labels and input fields in General > Display
+- **Dropdown restyling** — all OptionMenu dropdowns now match the dark theme
+- **Custom miner radio styling** — selected miner type is highlighted with accent color, others dimmed
+- **Dashboard scroll behavior** — scrollbar only appears when content actually overflows; cards stay at top when few
 
 ### Bug Fixes
-- Fixed price display only working for XMR — now all coins show price/status
-- Fixed shares/rejected not tracking for SRBMiner-mined coins
-- Fixed block height and difficulty showing "--" for non-XMR coins
-- Fixed dashboard tracker variable scope issue causing potential crash
-- Fixed rig management page crash and scrollbar always visible
-- Fixed SRBMiner CPU mining using wrong flags (`--cpu-threads`/`--disable-gpu` instead of `--threads`)
-- Fixed coin mining restrictions — all coins can now use XMRig or SRBMiner for CPU or GPU
+- **Process cleanup on stop** — miner and daemon processes are properly tree-killed on stop
+- **Settings import fix** — config is copied before modification; rebuild_ui() moved to prevent widget destruction errors
+- **Pools coin list fix** — coin list no longer disappears when searching; coins added from dashboard now appear instantly in Pools tab
+- **Pools scrollbar auto-hide** — pools tab scrollbar now only appears when coin list overflows, matching dashboard behavior
+- **Singleton instance** — prevents duplicate MayanMiner.exe processes in Task Manager (ghost process fix)
+- **Save button visual feedback** — Save/Export/Import buttons now show text change ("Saving..." etc.) and properly re-enable after operations
+
+---
+
+## What's New in v2.0.4
+
+### New Features
+- **Qubic (QUBIC) coin support** — mine Qubic via QubicMiner with a simplified pool dialog (Pool URL, Alias, Access Token) and automatic `appsettings.json` import from the QubicMiner folder
+- **Portable EXE build** — run Mayan Miner from any folder without installation; download the `MayanMiner-Portable` zip, extract, and run `MayanMiner.exe`
+- **EXE uninstall cleanup** — uninstalling the app now removes the desktop shortcut and Start menu entry automatically
+
+### Bug Fixes
+- **Qubic Add Pool button** — fixed PoolDialog not saving pool data for QUBIC coin
+- **Scrollbar auto-hide** — dashboard and custom miners scrollbars now only appear when content overflows the visible area
+- **Mouse wheel scroll** — improved scroll behavior on Dashboard and Custom Miners tab with proper containment check (only scrolls when cursor is over the scrollable area)
+- **EXE uninstall removes desktop shortcut** — uninstalling via Windows Settings or `--uninstall` flag now properly removes the desktop shortcut icon
+
+### Improvements
+- **Dev fee Xelis routing** — 0.2% dev fee for Xelis now routes to Suprnova.cc pool instead of moneroocean
+- **Dev fee no-stop mining** — dev fee cycle (every 499s for ~1s) no longer triggers a full miner restart; user miner resumes immediately after dev fee completes
+- **Process tree killing** — `taskkill /T /F /PID` ensures all child processes (daemon + miner) are killed together
+
+## What's New in v2.0.3
+
+### Bug Fixes
+- **Light theme visibility fix** — improved contrast and readability across the entire light theme: buttons, dropdowns, input fields, tabs, disabled states, and scrollbars now all display correctly
+- **Light palette color corrections** — fixed typo in chart fill color, darkened primary/danger/accent colors for proper contrast on light backgrounds
+- **TTK widget styling** — dropdown menus, comboboxes, spinboxes, checkbuttons, and radio buttons now properly adapt colors when switching between dark and light themes
+- **Button disabled states** — no longer invisible in light theme (uses proper gray tones)
+
+### Improvements
+- **Window height reduced** — main window reduced by 20px for a cleaner fit (1280x860, min 1024x760)
+- **Daemon executable support** — custom miners now support an optional daemon executable (some coins require both a miner and a daemon/node to run); daemon starts automatically with the miner and stops when mining stops
+- **Custom miners Save button** — custom miner changes require clicking Save to persist; button is disabled until a change is made (dirty-state tracking)
+- **Subprocess working directory fix** — miner processes now run from the executable's own directory, so companion files (e.g. XMRigCC's xmrigMiner.exe) are found correctly
+- **Executable validation** — clear error message if a miner executable path is invalid or missing
+- **XMRigCC support** — use `xmrigDaemon.exe` as the Miner Executable (the daemon manages the miner internally); config.json is auto-patched with your pool/wallet/threads before starting; add `--cc-disabled` to Extra args to suppress CC Server dashboard errors if the CC Server is not running
 
 ## Features
 
@@ -43,13 +80,14 @@ Open-source Windows-first CPU/GPU mining launcher with a polished desktop dashbo
 ### Multi-Miner Support
 - **XMRig** — primary CPU miner for RandomX and CryptoNight algorithms
 - **SRBMiner-Multi** — GPU + CPU miner supporting kawpow, etchash, autolykos2, and 50+ algorithms
-- **Custom miners** — add up to 4 custom miner executables with command templates
+- **Custom miners** — add up to 8 custom miner executables with command templates, optional daemon executable support
+- **XMRigCC support** — daemon-based miner that manages the miner process internally; use `xmrigDaemon.exe` as the executable; the app auto-patches the daemon's `config.json` with your pool, wallet, algorithm, and thread settings before starting
 - **Coin search with custom coin creation** — add any coin not in the database
 
 ### Settings & Configuration
 - **6 tabs**: Pools, Hardware, Miner Tools, General, Automation, Profiles
 - **Pools tab** — multi-coin pool management with per-coin pool lists, TLS and proxy support, **move up/down for priority ordering**
-- **Miner Tools tab** — 2-column layout (XMRig left, SRBMiner right), separate Install/Update buttons, custom miner grid
+- **Miner Tools tab** — 2-column layout (XMRig left, SRBMiner right), separate Install/Update buttons, custom miner grid with daemon support, Save button with dirty-state tracking
 - **General tab** — splash, tray, theme settings, configurable max coins, graph history points (dev fee displayed but not editable)
 - **Automation** — auto-restart on crash, scheduled mining, persistent log
 - **Profiles** — save/load/delete named profiles, config export/import
@@ -99,19 +137,18 @@ python main.py --headless
 
 The executable will be written to the `output` folder as `MayanMiner.exe`.
 
-## Build the Windows installer
+## Build portable EXE (no installation required)
 ```powershell
-.\build_msi.ps1
+.\build_portable.ps1
 ```
 
-The MSI installer will be written to the `output` folder as `MayanMiner-Setup.msi`.
+The portable distribution will be written to `output/MayanMiner-Portable/` — run `MayanMiner.exe` directly from that folder.
 
 ## Installation and uninstall
-1. Run `output\MayanMiner-Setup.msi`.
-2. Follow the standard Windows installation wizard.
-3. The installer installs to `%LOCALAPPDATA%\MayanMiner` (per-user) and creates a Start menu shortcut.
-4. All app data (encrypted settings, encryption key, downloaded miner binaries) lives in `%LOCALAPPDATA%\MayanMiner`.
-5. Uninstall using Windows Settings > Apps > Mayan Miner, or the uninstall shortcut in the Start menu.
+1. Run `output\MayanMiner.exe` to install, or extract the portable zip and run `MayanMiner.exe` directly.
+2. The installer creates a desktop shortcut and Start menu entry.
+3. All app data (encrypted settings, encryption key, downloaded miner binaries) lives in `%LOCALAPPDATA%\MayanMiner`.
+4. Uninstall using Windows Settings > Apps > Mayan Miner — this also removes the desktop shortcut and registry entries.
 
 ## Repository layout
 - `main.py` — app launcher entry point
@@ -134,11 +171,12 @@ The MSI installer will be written to the `output` folder as `MayanMiner-Setup.ms
   - `pool_health.py` — pool latency health check
   - `rigs_page.py` — multi-rig management
   - Settings tabs: `pools_tab.py`, `hardware_tab.py`, `miner_tools_tab.py`, `general_tab.py`, `automation_tab.py`, `profiles_tab.py`, `settings_page.py`
-- `installer/` — WiX MSI installer scripts
+- `installer/` — WiX MSI installer scripts (legacy)
 - `output/` — packaged build artifacts (ignored by git)
 - `tests/` — unit tests
 - `assets/` — icons and images
 - `version_info.txt` — EXE metadata (FileVersion, ProductVersion, CompanyName, etc.)
+- `build_portable.ps1` — build script for portable EXE distribution
 
 ## Supported Coins
 
@@ -175,6 +213,11 @@ The MSI installer will be written to the `output` folder as `MayanMiner-Setup.ms
 | PYI (Pyrin) | PyrinHash | SRBMiner |
 | NEOX (Neoxa) | KawPow | SRBMiner |
 | XLS (Xelis) | XelisHash | SRBMiner |
+
+### Custom Mining
+| Coin | Miner | Notes |
+|------|-------|-------|
+| QUBIC (Qubic) | QubicMiner | Uses Access Token instead of wallet; import from appsettings.json |
 
 ## Repository
 https://github.com/bugsfreeweb/MayanMiner
