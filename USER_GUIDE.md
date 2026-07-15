@@ -1,4 +1,4 @@
-# Mayan Miner v2.0.5 User Guide
+# Mayan Miner Launcher v2.0.7 User Guide
 
 ## Table of Contents
 1. [Quick Start](#quick-start)
@@ -158,7 +158,7 @@ Organized into 6 tabs:
 ### General
 - **Application**: Show splash screen on startup, keep running in system tray, show tray icon
 - **Display**: Configure max coins on dashboard (1-20), graph history points (30-500)
-- **Developer Fee**: 0.2% (displayed, not editable)
+- **Developer Fee**: Configurable (default 0.2%, min 0.2%, max 5.0%) — runs on the same miner tool you use
 - **Logging**: Enable persistent mining log to file
 - **Check Updates** — verifies GitHub releases for newer versions
 
@@ -275,7 +275,7 @@ Choose between **Dark** and **Light** themes in **Settings > General**. The them
 ## Frequently Asked Questions
 
 **Q: Where are my settings stored?**
-A: `%LOCALAPPDATA%\MayanMiner\config.json` (encrypted). The app data folder also stores downloaded miner binaries and log files.
+A: `%LOCALAPPDATA%\MayanMinerLauncher\config.json` (encrypted). The app data folder also stores downloaded miner binaries and log files.
 
 **Q: How do I mine a coin that's not in the database?**
 A: Go to **Dashboard > Add Coin** (or **Settings > Pools > Add Coin**) and click **+ Add Custom Coin**. Enter the ticker, name, algorithm, and mine type (cpu/gpu). Custom coins with a CoinGecko ID get automatic price tracking.
@@ -292,8 +292,8 @@ A: Earnings estimates require both CoinGecko price data AND an active mining has
 **Q: How does pool failover work?**
 A: If the connection drops or the miner crashes, the app automatically switches to the next enabled pool. Use the Move Up/Down buttons in Settings > Pools to set the failover order.
 
-**Q: What is the 0.2% developer fee?**
-A: Every 499 seconds, the launcher mines for ~1 second to the developer wallet to support continued development. This fee is not editable.
+**Q: What is the developer fee?**
+A: A configurable fee (default 0.2%) runs periodically to the developer wallet to support continued development. You can adjust it in Settings > General > Developer Fee (minimum 0.2%, maximum 5.0%). The fee always uses the same miner tool you're using (e.g., SRBMiner → XEL via Suprnova, XMRig → XMR via MoneroOcean).
 
 **Q: How do I check for app updates?**
 A: Go to **Settings > General** and click **Check Updates**. If a newer version is available on GitHub, the button changes to **Download Update**.

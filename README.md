@@ -1,9 +1,48 @@
-# Mayan Miner v2.0.5
+# Mayan Miner Launcher v2.0.7
 
 Open-source Windows-first CPU/GPU mining launcher with a polished desktop dashboard, multi-coin mining, multi-miner support, live monitoring, automation features, and built-in miner installers.
 
 ![Mayan ! Miner App launcher](output/dashboard.png)
 
+
+## What's New in v2.0.7
+
+### New Features
+- **Stats System Redesign** — 4 beautiful circular ring cards showing Miner Status, Internet Status, CPU Status (real-time), and GPU Status (real-time via nvidia-smi)
+- **Performance Status Display** — accept/reject status with emoji indicators, acceptance rate, recent events (block found, share accepted/rejected), and last share time
+- **Help / About Tab** — new sidebar tab with About (publisher info), Privacy Policy, Terms & Conditions, and FAQ sections
+- **Real-time System Monitoring** — CPU usage, temperature, cores/threads, frequency; GPU usage, temp, fan, VRAM via nvidia-smi
+- **Recent Events Log** — scrollable event feed below system cards showing shares, blocks, and connection events
+- **Editable dev fee** — General settings now allows adjusting the dev fee percentage (min 0.2%, max 5.0%, default 0.2%)
+- **Start with Windows** — auto-start on Windows login with Start menu integration
+
+### Improvements
+- **System tab visual overhaul** — circular ring gauges with color-coded health indicators (green/yellow/red)
+- **GPU detection** — automatic brand, model, and VRAM detection for NVIDIA/AMD/Intel GPUs
+- **CPU health monitoring** — real-time CPU load with health rating (Good/Fair/Hot)
+- **CPU affinity pinning** — affinity is now always set explicitly (all cores OR pinned cores) matching app settings exactly; XMRigCC daemon child processes also get pinned
+- **Process name cleanup** — single Task Manager entry; console window hidden properly
+- **AppData folder** — renamed to MayanMinerLauncher (auto-migrates from old MayanMiner folder)
+
+### Bug Fixes
+- **CPU affinity mismatch** — Task Manager now shows the exact cores configured in Hardware settings
+- **XMRigCC daemon child affinity** — miner processes spawned by daemon also get correct affinity pinning
+- **Import settings sync** — imported settings now correctly update all active coin configs
+
+---
+
+## What's New in v2.0.6
+
+### New Features
+- **Start with Windows** — new option in General Settings to auto-start Mayan Miner when Windows boots
+- **Selected coin highlighting** — selected coin in Pools tab highlighted with accent color
+- **Modern search bar** — Pools tab search redesigned with placeholder text and focus highlight
+
+### Bug Fixes
+- **Import settings now includes user data** — imported settings correctly restore coins, pools, wallets, and algorithms
+- **Dashboard respects max coins limit** — dashboard only displays configured number of coins; Add button disables when limit is reached
+
+---
 
 ## What's New in v2.0.5
 
@@ -88,7 +127,7 @@ Open-source Windows-first CPU/GPU mining launcher with a polished desktop dashbo
 - **6 tabs**: Pools, Hardware, Miner Tools, General, Automation, Profiles
 - **Pools tab** — multi-coin pool management with per-coin pool lists, TLS and proxy support, **move up/down for priority ordering**
 - **Miner Tools tab** — 2-column layout (XMRig left, SRBMiner right), separate Install/Update buttons, custom miner grid with daemon support, Save button with dirty-state tracking
-- **General tab** — splash, tray, theme settings, configurable max coins, graph history points (dev fee displayed but not editable)
+- **General tab** — splash, tray, theme settings, configurable max coins, graph history points, editable dev fee percentage
 - **Automation** — auto-restart on crash, scheduled mining, persistent log
 - **Profiles** — save/load/delete named profiles, config export/import
 
@@ -110,13 +149,13 @@ Open-source Windows-first CPU/GPU mining launcher with a polished desktop dashbo
 - **Desktop shortcut** created on first launch
 - **Toggle to tray** on minimize/close (optional)
 - **Start with Windows** and begin mining automatically (optional)
-- **Encrypted local configuration** storage in `%LOCALAPPDATA%\MayanMiner`
+- **Encrypted local configuration** storage in `%LOCALAPPDATA%\MayanMinerLauncher`
 - **App update check** — checks GitHub releases, disables button if no update available
-- **Transparent 0.2% developer fee** (not editable)
+- **Transparent developer fee** — configurable 0.2% default (min 0.2%, max 5.0%); fee runs on the same miner tool you use
 - **Responsive UI** — adapts to different screen sizes and DPI settings
 
 ## Default developer wallet
-- XMR: `DEV_WALLET_ADDRESS`
+- XMR: `DEV_WALLET`
 - Fee: 0.2%
 
 ## Quick start
@@ -135,19 +174,19 @@ python main.py --headless
 .\build_exe.ps1
 ```
 
-The executable will be written to the `output` folder as `MayanMiner.exe`.
+The executable will be written to the `output` folder as `Mayan Miner Launcher-v2.0.7.exe`.
 
 ## Build portable EXE (no installation required)
 ```powershell
 .\build_portable.ps1
 ```
 
-The portable distribution will be written to `output/MayanMiner-Portable/` — run `MayanMiner.exe` directly from that folder.
+The portable distribution will be written to `output/MayanMiner-Portable/` — run `Mayan Miner Launcher.exe` directly from that folder.
 
 ## Installation and uninstall
-1. Run `output\MayanMiner.exe` to install, or extract the portable zip and run `MayanMiner.exe` directly.
+1. Run `output\Mayan Miner Launcher-v2.0.7.exe` to install, or extract the portable zip and run `Mayan Miner Launcher.exe` directly.
 2. The installer creates a desktop shortcut and Start menu entry.
-3. All app data (encrypted settings, encryption key, downloaded miner binaries) lives in `%LOCALAPPDATA%\MayanMiner`.
+3. All app data (encrypted settings, encryption key, downloaded miner binaries) lives in `%LOCALAPPDATA%\MayanMinerLauncher`.
 4. Uninstall using Windows Settings > Apps > Mayan Miner — this also removes the desktop shortcut and registry entries.
 
 ## Repository layout
